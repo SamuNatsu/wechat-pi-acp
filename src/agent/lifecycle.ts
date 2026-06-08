@@ -105,11 +105,14 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
       console.log(`[agent] loadSession failed: ${(err as Error).message}, creating new session.`);
       const created = await conn.newSession({ cwd, mcpServers: [] });
       sessionId = created.sessionId;
+      collector.reset();
     }
   } else {
     // No prior session — create a fresh one
     const created = await conn.newSession({ cwd, mcpServers: [] });
     sessionId = created.sessionId;
+    // Discard any intro text the agent sent during session setup
+    collector.reset();
   }
 
   setSession(userId, { sessionId });
