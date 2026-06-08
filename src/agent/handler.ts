@@ -91,6 +91,7 @@ export function createTextCollector() {
   let bufKind: string | null = null;
   let onFlush: (text: string) => void = () => {};
   const mediaFiles: unknown[] = [];
+  let hasThought = false;
 
   let currentModeId: string | null = null;
   let sessionTitle: string | null = null;
@@ -119,6 +120,7 @@ export function createTextCollector() {
     reset(): void {
       buf = "";
       bufKind = null;
+      hasThought = false;
       mediaFiles.length = 0;
     },
     getText(): string {
@@ -150,11 +152,13 @@ export function createTextCollector() {
       if (!update) return;
       switch (update.sessionUpdate) {
         case "agent_message_chunk": {
+          if (!hasThought) break;
           if (update.content?.type === "text") append("message", update.content.text);
           break;
         }
         case "agent_thought_chunk": {
           if (update.content?.type === "text") append("thought", update.content.text);
+          hasThought = true;
           break;
         }
         case "tool_call_update": {
