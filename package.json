@@ -1,6 +1,6 @@
 {
   "name": "wechat-pi-acp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "WeChat-to-Pi ACP bridge — connect WeChat to Pi agent via QR login",
   "license": "MIT",
   "author": "SNRainiar",
