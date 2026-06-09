@@ -7,12 +7,12 @@
  * tracked in-memory and displayed when the user sends /file-upload-end.
  */
 
-import path from "node:path";
-import fs from "node:fs/promises";
 import { downloadMedia, extractMediaItems } from "./download.js";
-import { humanizeSize, escape } from "../utils.js";
-import { sendTextReply } from "../dispatch.js";
+import { escape, humanizeSize } from "../utils.js";
 import type { WechatMessage } from "../types.js";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { sendTextReply } from "../dispatch.js";
 
 /** Set of user IDs currently in upload mode. */
 const uploadModeUsers = new Set<string>();

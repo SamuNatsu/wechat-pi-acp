@@ -10,12 +10,12 @@
  *   6. Build the WechatMessageItem for the outbound message
  */
 
+import type { UploadResult, WechatMessageItem } from "../types.js";
+import { aesEcbPaddedSize, encryptAesEcb, randHex } from "./crypto.js";
+import { getUploadUrl as apiGetUploadUrl } from "../wechat/api.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { encryptAesEcb, aesEcbPaddedSize, randHex } from "./crypto.js";
-import { getUploadUrl as apiGetUploadUrl } from "../wechat/api.js";
-import type { UploadResult, WechatMessageItem } from "../types.js";
 
 /** CDN upload base URL — used when uploadFullUrl is not provided. */
 const CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c";

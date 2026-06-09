@@ -6,8 +6,8 @@
  * graceful shutdown via AbortSignal.
  */
 
-import { getUpdates as apiGetUpdates } from "./api.js";
 import type { StreamEvent } from "../types.js";
+import { getUpdates as apiGetUpdates } from "./api.js";
 
 /** Maximum consecutive failures before entering backoff. */
 const MAX_CONSECUTIVE_FAILURES = 3;

@@ -6,11 +6,11 @@
  * embedded in the message's CdnMedia metadata.
  */
 
+import type { CdnMedia, DownloadResult } from "../types.js";
 import crypto from "node:crypto";
+import { decryptAesEcb } from "./crypto.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { decryptAesEcb } from "./crypto.js";
-import type { CdnMedia, DownloadResult } from "../types.js";
 
 function ensureDir(dir: string) {
   fs.mkdir(dir, { recursive: true }).catch(() => {});

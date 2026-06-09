@@ -22,13 +22,14 @@ pnpm format:check   # prettier --check src/
 - **Build, typecheck, and lint must all pass before release**: `pnpm lint && pnpm typecheck && pnpm build`
 - There are **no tests** in this repo. TypeScript strict mode + ESLint are the safety nets.
 - ESLint uses `typescript-eslint` recommended type-checked rules + `eslint-config-prettier`.
-- Node.js **22+ required** — enforced at runtime in `cli.ts`.
-- CI (`publish.yml`) triggers on `v*` tags, runs `pnpm build` then `npm publish` with Node 24.
+- Node.js **24+ required** (`package.json` engines, CI uses Node 24). Runtime guard in `cli.ts` checks 22+ — update it if bumping engines.
+- CI (`publish.yml`) triggers on `v*` tags, runs `pnpm install --frozen-lockfile` then `pnpm build` then `npm publish`. CI does **not** run lint or typecheck — those are dev-only.
+- Install dependencies with `pnpm install --frozen-lockfile` to match what CI does.
 
 ## Formatting & Lint Rules
 
 - Prettier: **double quotes** (`singleQuote: false`), trailing commas all, `printWidth: 120`.
-- ESLint: unused vars/args must be prefixed with `_` to suppress errors (`argsIgnorePattern: "^_"`, `varsIgnorePattern: "^_"`).
+- ESLint: unused vars/args must be prefixed with `_` to suppress errors (`argsIgnorePattern: "^_"`, `varsIgnorePattern: "^_"`). Imports are sorted (`sort-imports: error`).
 
 ## Version Bumping
 

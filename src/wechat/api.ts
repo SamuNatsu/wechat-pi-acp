@@ -7,21 +7,21 @@
  * Reference: WEIXIN-API.md in the repo root.
  */
 
-import { randomWechatUin } from "../media/crypto.js";
-import { loadConfig } from "../config.js";
-import { VERSION } from "../version.js";
 import type {
+  GetConfigResponse,
+  GetUpdatesResponse,
+  NotifyResponse,
   QrCodeResponse,
   QrStatusResponse,
-  GetUpdatesResponse,
-  WechatMessageItem,
   SendResult,
-  GetConfigResponse,
-  UploadUrlResponse,
   UploadUrlParams,
-  NotifyResponse,
+  UploadUrlResponse,
+  WechatMessageItem,
 } from "../types.js";
 import type { AppConfig } from "../types.js";
+import { VERSION } from "../version.js";
+import { loadConfig } from "../config.js";
+import { randomWechatUin } from "../media/crypto.js";
 
 /** The fixed login host — QR code and status polling always hit this origin. */
 const FIXED_LOGIN_BASE = "https://ilinkai.weixin.qq.com";

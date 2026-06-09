@@ -6,9 +6,9 @@
  * connection state to the rest of the app.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import type { Agent, Client } from "@agentclientprotocol/sdk";
+import { type ChildProcess, spawn } from "node:child_process";
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
-import type { Client, Agent } from "@agentclientprotocol/sdk";
 
 /** Currently running agent child process (null when idle). */
 let proc: ChildProcess | null = null;

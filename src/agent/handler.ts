@@ -11,17 +11,17 @@
  */
 
 import type {
-  Client,
   Agent,
-  SessionUpdate,
-  SessionNotification,
-  RequestPermissionRequest,
-  RequestPermissionResponse,
+  Client,
   ReadTextFileRequest,
   ReadTextFileResponse,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+  SessionConfigOption,
+  SessionNotification,
+  SessionUpdate,
   WriteTextFileRequest,
   WriteTextFileResponse,
-  SessionConfigOption,
 } from "@agentclientprotocol/sdk";
 
 /** Aggregated session metadata captured from the agent's sessionUpdate stream. */

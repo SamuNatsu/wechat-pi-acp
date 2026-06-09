@@ -1,9 +1,9 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { humanizeSize, escape } from "./utils.js";
+import type { CancelNotification, SetSessionModeRequest } from "@agentclientprotocol/sdk";
+import { escape, humanizeSize } from "./utils.js";
 import type { SessionData } from "./types.js";
 import type { SessionMeta } from "./agent/handler.js";
-import type { CancelNotification, SetSessionModeRequest } from "@agentclientprotocol/sdk";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 // ---- CommandContext ----
 

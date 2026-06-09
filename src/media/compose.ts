@@ -8,8 +8,8 @@
  * original positions. /msg-cancel drops the accumulated content.
  */
 
-import { downloadMedia } from "./download.js";
 import type { WechatMessage } from "../types.js";
+import { downloadMedia } from "./download.js";
 
 type ComposeItem = { kind: "text"; content: string } | { kind: "file"; path: string; size: number };
 

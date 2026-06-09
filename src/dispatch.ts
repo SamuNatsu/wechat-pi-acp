@@ -11,20 +11,20 @@
  * by sibling modules (media/inbox, commands via CommandContext closures).
  */
 
-import path from "node:path";
-import { loadConfig } from "./config.js";
-import { sendMessage, sendTyping, getConfig } from "./wechat/api.js";
-import { downloadMedia, extractMediaItems } from "./media/download.js";
-import { uploadAndBuildMediaItems } from "./media/upload.js";
-import { cleanupUserDir } from "./media/cleanup.js";
-import { killAgent, isRunning, getConnection } from "./agent/client.js";
-import { getSession, setSession, deleteSession, touchSession } from "./agent/session.js";
-import { getCurrentCollector, resetSessionState, ensureAgentRunning } from "./agent/lifecycle.js";
-import { isUploadMode, uploadStart, uploadEnd, handleUploadMode } from "./media/inbox.js";
-import { isComposeMode, composeStart, composeEnd, composeCancel, handleComposeMode } from "./media/compose.js";
-import { dispatchCommand, type CommandContext, type AgentConnection } from "./commands.js";
-import { splitText } from "./utils.js";
+import { type AgentConnection, type CommandContext, dispatchCommand } from "./commands.js";
 import type { WechatMessage, WechatMessageItem } from "./types.js";
+import { composeCancel, composeEnd, composeStart, handleComposeMode, isComposeMode } from "./media/compose.js";
+import { deleteSession, getSession, setSession, touchSession } from "./agent/session.js";
+import { downloadMedia, extractMediaItems } from "./media/download.js";
+import { ensureAgentRunning, getCurrentCollector, resetSessionState } from "./agent/lifecycle.js";
+import { getConfig, sendMessage, sendTyping } from "./wechat/api.js";
+import { getConnection, isRunning, killAgent } from "./agent/client.js";
+import { handleUploadMode, isUploadMode, uploadEnd, uploadStart } from "./media/inbox.js";
+import { cleanupUserDir } from "./media/cleanup.js";
+import { loadConfig } from "./config.js";
+import path from "node:path";
+import { splitText } from "./utils.js";
+import { uploadAndBuildMediaItems } from "./media/upload.js";
 
 // ---- message dispatch ----
 

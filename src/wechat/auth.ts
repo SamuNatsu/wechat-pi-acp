@@ -6,9 +6,9 @@
  * to ~/.wechat-pi-acp/config.json.
  */
 
-import { fetchQRCode, pollQRStatus, FIXED_BASE_URL, DEFAULT_BOT_TYPE } from "./api.js";
+import type { ActiveLogin, LoginOptions, LoginResult } from "../types.js";
+import { DEFAULT_BOT_TYPE, FIXED_BASE_URL, fetchQRCode, pollQRStatus } from "./api.js";
 import { saveConfig } from "../config.js";
-import type { LoginResult, LoginOptions, ActiveLogin } from "../types.js";
 
 /** Maximum number of QR code refreshes before giving up. */
 const MAX_QR_REFRESH_COUNT = 3;

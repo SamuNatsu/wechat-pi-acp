@@ -6,15 +6,15 @@
  * Connects WeChat to Pi ACP agent via QR login.
  */
 
-import { cac } from "cac";
+import { fullCleanup, startPeriodicCleanup, stopPeriodicCleanup } from "./media/cleanup.js";
+import { notifyStart, notifyStop, streamMessages } from "./wechat/stream.js";
 import { VERSION } from "./version.js";
+import type { WechatMessageItem } from "./types.js";
+import { cac } from "cac";
+import { handleMessage } from "./dispatch.js";
+import { killAgent } from "./agent/client.js";
 import { loadConfig } from "./config.js";
 import { loginWithQR } from "./wechat/auth.js";
-import { streamMessages, notifyStart, notifyStop } from "./wechat/stream.js";
-import { handleMessage } from "./dispatch.js";
-import { fullCleanup, startPeriodicCleanup, stopPeriodicCleanup } from "./media/cleanup.js";
-import { killAgent } from "./agent/client.js";
-import type { WechatMessageItem } from "./types.js";
 
 // ---- CLI definition ----
 

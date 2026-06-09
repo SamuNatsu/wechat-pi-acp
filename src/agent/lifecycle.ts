@@ -11,13 +11,13 @@
  * and starts a fresh one. The text collector is reset on each prompt cycle.
  */
 
-import { mkdirSync } from "node:fs";
-import { loadConfig } from "../config.js";
-import { VERSION } from "../version.js";
 import { createHandlerFactory, createTextCollector } from "./handler.js";
-import { spawnAndConnect, killAgent, isRunning, getConnection } from "./client.js";
+import { getConnection, isRunning, killAgent, spawnAndConnect } from "./client.js";
 import { getSession, setSession, touchSession } from "./session.js";
 import type { RequestPermissionResponse } from "@agentclientprotocol/sdk";
+import { VERSION } from "../version.js";
+import { loadConfig } from "../config.js";
+import { mkdirSync } from "node:fs";
 
 /** The user ID currently bound to the running agent process. */
 let currentUserId: string | null = null;
