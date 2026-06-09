@@ -9,44 +9,29 @@
 
 import { downloadMedia, extractMediaItems } from "./download.js";
 import { escape, humanizeSize } from "../utils.js";
+import { getUploadFiles, getUploadModeUsers } from "../state.js";
 import type { WechatMessage } from "../types.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { sendTextReply } from "../dispatch.js";
+import { sendTextReply } from "../reply.js";
 
-/** Set of user IDs currently in upload mode. */
-const uploadModeUsers = new Set<string>();
-/** Per-user list of files received during the current upload session. */
-const uploadFiles = new Map<string, { name: string; size: number }[]>();
-
-/** Check whether a user is currently in file-upload mode. */
 export function isUploadMode(userId: string): boolean {
-  return uploadModeUsers.has(userId);
+  return getUploadModeUsers().has(userId);
 }
 
-/** Enter upload mode for the given user — clears any previous file list. */
 export function uploadStart(userId: string): void {
-  uploadModeUsers.add(userId);
-  uploadFiles.set(userId, []);
+  getUploadModeUsers().add(userId);
+  getUploadFiles().set(userId, []);
 }
 
-/**
- * Exit upload mode for the given user.
- * Returns the accumulated file list and clears state.
- */
 export function uploadEnd(userId: string): { name: string; size: number }[] {
-  if (!uploadModeUsers.has(userId)) return [];
-  uploadModeUsers.delete(userId);
-  const files = uploadFiles.get(userId) || [];
-  uploadFiles.delete(userId);
+  if (!getUploadModeUsers().has(userId)) return [];
+  getUploadModeUsers().delete(userId);
+  const files = getUploadFiles().get(userId) || [];
+  getUploadFiles().delete(userId);
   return files;
 }
 
-/**
- * Handle an inbound message while the user is in upload mode.
- * Downloads any media attachments, checks for name conflicts,
- * tracks new files, and sends a summary reply.
- */
 export async function handleUploadMode(
   message: WechatMessage,
   fromUserId: string,
@@ -56,7 +41,7 @@ export async function handleUploadMode(
   maxFileSize?: number,
 ): Promise<void> {
   const mediaExtracts = extractMediaItems(message);
-  const list = uploadFiles.get(fromUserId) || [];
+  const list = getUploadFiles().get(fromUserId) || [];
 
   if (mediaExtracts.length > 0) {
     for (const media of mediaExtracts) {
@@ -66,16 +51,13 @@ export async function handleUploadMode(
         await fs.access(destPath);
         await sendTextReply(fromUserId, `⚠️ 文件已存在，跳过: ${fileName}`, contextToken);
         continue;
-      } catch {
-        // file does not exist, proceed
-      }
-
+      } catch {}
       const result = await downloadMedia(cdnBaseUrl, media.cdn, userTempDir, media.type, maxFileSize);
       if (result) {
         list.push({ name: path.basename(result.filePath), size: result.size });
       }
     }
-    uploadFiles.set(fromUserId, list);
+    getUploadFiles().set(fromUserId, list);
   }
 
   if (list.length === 0) {

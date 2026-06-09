@@ -6,15 +6,16 @@
  * Connects WeChat to Pi ACP agent via QR login.
  */
 
-import { fullCleanup, startPeriodicCleanup, stopPeriodicCleanup } from "./media/cleanup.js";
-import { notifyStart, notifyStop, streamMessages } from "./wechat/stream.js";
 import { VERSION } from "./version.js";
 import type { WechatMessageItem } from "./types.js";
 import { cac } from "cac";
+import { fullCleanup } from "./media/cleanup.js";
+import { getWechatClient } from "./wechat/client.js";
 import { handleMessage } from "./dispatch.js";
-import { killAgent } from "./agent/client.js";
+import { killAgent } from "./agent/agent.js";
 import { loadConfig } from "./config.js";
 import { loginWithQR } from "./wechat/auth.js";
+import { streamMessages } from "./wechat/stream.js";
 
 // ---- CLI definition ----
 
@@ -77,9 +78,6 @@ async function main(): Promise<void> {
   console.log(`  用户 ID: ${config.ilinkUserId}`);
   console.log(`  空闲超时: ${config.idleTimeoutMs / 1000}s\n`);
 
-  // Start periodic cleanup of stale temp files (/tmp/wechat-pi-acp/)
-  startPeriodicCleanup(config.mediaTempDir, config.fileTtlMs);
-
   // ---- graceful shutdown ----
 
   const abortController = new AbortController();
@@ -92,9 +90,8 @@ async function main(): Promise<void> {
     abortController.abort(); // break the long-poll loop
     killAgent(); // SIGTERM the ACP agent child process
     try {
-      await notifyStop(config.baseUrl, config.token);
+      await getWechatClient().notifyStop();
     } catch {}
-    stopPeriodicCleanup();
     await fullCleanup(config.mediaTempDir);
     console.log("再见！");
     process.exit(0);
@@ -110,7 +107,7 @@ async function main(): Promise<void> {
   // ---- startup handshake ----
 
   try {
-    await notifyStart(config.baseUrl, config.token);
+    await getWechatClient().notifyStart();
     console.log("[wechat] notifyStart 成功");
   } catch (err) {
     console.error(`[wechat] notifyStart 失败: ${(err as Error).message}`);
@@ -123,7 +120,7 @@ async function main(): Promise<void> {
   let messageCount = 0;
 
   // Long-poll WeChat for inbound messages; yields StreamEvent{type, msg}
-  for await (const event of streamMessages(config.baseUrl, config.token, abortController.signal, () => {})) {
+  for await (const event of streamMessages(abortController.signal, () => {})) {
     if (shuttingDown) break;
 
     // Server-side session expired — streamSession internally pauses 60 min

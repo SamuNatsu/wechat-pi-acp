@@ -7,7 +7,7 @@
  */
 
 import type { StreamEvent } from "../types.js";
-import { getUpdates as apiGetUpdates } from "./api.js";
+import { getWechatClient } from "./client.js";
 
 /** Maximum consecutive failures before entering backoff. */
 const MAX_CONSECUTIVE_FAILURES = 3;
@@ -18,7 +18,6 @@ const RETRY_DELAY_MS = 2_000;
 /** Error code returned by the server when the session has expired. */
 const SESSION_EXPIRED_ERRCODE = -14;
 
-export { notifyStart, notifyStop } from "./api.js";
 export { SESSION_EXPIRED_ERRCODE };
 
 /**
@@ -26,14 +25,10 @@ export { SESSION_EXPIRED_ERRCODE };
  * On session expiry (errcode -14) it pauses for 60 minutes, then resumes.
  * On transient errors it backs off with increasing delays.
  *
- * @param baseUrl     The agent's assigned API base URL
- * @param token       The authenticated bot token
  * @param abortSignal AbortController signal for graceful shutdown
  * @param onStatus    Callback for monitoring last-event timestamps
  */
 export async function* streamMessages(
-  baseUrl: string,
-  token: string,
   abortSignal: AbortSignal | undefined,
   onStatus: (status: { lastEventAt?: number; lastInboundAt?: number }) => void,
 ): AsyncGenerator<StreamEvent> {
@@ -43,7 +38,8 @@ export async function* streamMessages(
 
   while (!abortSignal?.aborted) {
     try {
-      const resp = await apiGetUpdates(baseUrl, token, buf, abortSignal, nextTimeoutMs);
+      const client = getWechatClient();
+      const resp = await client.getUpdates(buf, abortSignal, nextTimeoutMs);
 
       // Server may adjust the poll timeout dynamically
       if (resp.longpolling_timeout_ms) {

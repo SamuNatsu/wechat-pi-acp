@@ -13,8 +13,6 @@ export interface AppConfig {
   idleTimeoutMs: number;
   /** Root directory for temporary media downloads. */
   mediaTempDir: string;
-  /** TTL (ms) for cached media files before periodic cleanup purges them. */
-  fileTtlMs: number;
   /** Hard cap on a single file upload/download (bytes). */
   maxFileSize: number;
   botAgent: string;

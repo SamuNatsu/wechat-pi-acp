@@ -6,16 +6,15 @@
  * to ~/.wechat-pi-acp/config.json.
  */
 
-import type { ActiveLogin, LoginOptions, LoginResult } from "../types.js";
 import { DEFAULT_BOT_TYPE, FIXED_BASE_URL, fetchQRCode, pollQRStatus } from "./api.js";
+import type { LoginOptions, LoginResult } from "../types.js";
+import { getActiveLogin, setActiveLogin } from "../state.js";
 import { saveConfig } from "../config.js";
 
 /** Maximum number of QR code refreshes before giving up. */
 const MAX_QR_REFRESH_COUNT = 3;
 /** Total time to wait for the user to scan and confirm (8 minutes). */
 const DEFAULT_WAIT_TIMEOUT_MS = 480_000;
-
-let activeLogin: ActiveLogin | null = null;
 
 /** Render the QR code in the terminal via qrcode-terminal, with a fallback URL. */
 async function displayQRCode(qrcodeUrl: string): Promise<void> {
@@ -61,9 +60,10 @@ export async function loginWithQR(opts?: LoginOptions): Promise<LoginResult> {
     process.stdout.write(`\n正在刷新二维码...(${qrRefreshCount}/${MAX_QR_REFRESH_COUNT})\n`);
     try {
       const resp = await fetchQRCode(FIXED_BASE_URL, botType);
-      activeLogin!.qrcode = resp.qrcode;
-      activeLogin!.qrcodeUrl = resp.qrcode_img_content;
-      activeLogin!.startedAt = Date.now();
+      const login = getActiveLogin()!;
+      login.qrcode = resp.qrcode;
+      login.qrcodeUrl = resp.qrcode_img_content;
+      login.startedAt = Date.now();
       scannedPrinted = false;
       process.stdout.write(`二维码已更新，请重新扫描。\n\n`);
       await displayQRCode(resp.qrcode_img_content);
@@ -82,11 +82,11 @@ export async function loginWithQR(opts?: LoginOptions): Promise<LoginResult> {
     throw new Error(`获取二维码失败: ${(err as Error).message}`);
   }
 
-  activeLogin = {
+  setActiveLogin({
     qrcode: resp.qrcode,
     qrcodeUrl: resp.qrcode_img_content,
     startedAt: Date.now(),
-  };
+  });
   scannedPrinted = false;
 
   process.stdout.write("\n用手机微信扫描以下二维码，以继续连接：\n\n");
@@ -101,7 +101,7 @@ export async function loginWithQR(opts?: LoginOptions): Promise<LoginResult> {
   while (Date.now() < deadline) {
     let statusResp;
     try {
-      statusResp = await pollQRStatus(currentBaseUrl, activeLogin.qrcode, pendingVerifyCode);
+      statusResp = await pollQRStatus(currentBaseUrl, getActiveLogin()!.qrcode, pendingVerifyCode);
     } catch (err) {
       if ((err as Error).name === "AbortError") {
         process.stdout.write(".");
@@ -178,7 +178,7 @@ export async function loginWithQR(opts?: LoginOptions): Promise<LoginResult> {
           baseUrl: result.baseUrl,
         });
 
-        activeLogin = null;
+        setActiveLogin(null);
         return result;
       }
 

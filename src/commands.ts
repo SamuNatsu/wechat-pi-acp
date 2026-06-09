@@ -13,33 +13,44 @@ export interface AgentConnection {
   setSessionMode: (params: SetSessionModeRequest) => Promise<void>;
 }
 
-/**
- * Dependency-injection context passed to every command handler.
- * Methods are closures that capture the current message's fromUserId
- * and contextToken so commands can mutate sessions without losing the
- * reply target.
- */
-export interface CommandContext {
+export interface CommandReplyOps {
   fromUserId: string;
   contextToken: string;
-  inboxDir: string;
   sendReply: (text: string) => Promise<void>;
   sendMedia: (filePath: string, caption?: string) => Promise<void>;
+}
+
+export interface CommandSessionOps {
   getSession: () => SessionData | null;
   deleteSession: () => void;
-  agentConn: () => AgentConnection | null;
   agentRunning: () => boolean;
   killAgent: () => void;
   resetSessionState: () => void;
+  getSessionMeta: () => SessionMeta | null;
+}
+
+export interface CommandAgentOps {
+  agentConn: () => AgentConnection | null;
+  sendPrompt: (text: string) => Promise<void>;
+}
+
+export interface CommandMediaOps {
+  inboxDir: string;
   cleanupUserDir: () => Promise<void>;
   uploadStart: () => void;
   uploadEnd: () => { name: string; size: number }[];
   composeStart: () => void;
   composeEnd: () => string | null;
   composeCancel: () => void;
-  sendPrompt: (text: string) => Promise<void>;
-  getSessionMeta: () => SessionMeta | null;
 }
+
+/**
+ * Dependency-injection context passed to every command handler.
+ * Methods are closures that capture the current message's fromUserId
+ * and contextToken so commands can mutate sessions without losing the
+ * reply target.
+ */
+export interface CommandContext extends CommandReplyOps, CommandSessionOps, CommandAgentOps, CommandMediaOps {}
 
 // ---- handler & registry ----
 

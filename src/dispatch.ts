@@ -1,30 +1,35 @@
 /**
  * Message dispatch pipeline — the central orchestrator of wechat-pi-acp.
  *
- * Each incoming WeChat message flows through three stages:
+ * Each incoming WeChat message flows through four stages:
  *   1. Command intercept  — slash-commands are handled locally
- *   2. Upload-mode bypass — if the user is in file-upload mode, non-command
- *      messages are intercepted by the inbox module
- *   3. Agent routing      — text and media are forwarded to the ACP agent
- *
- * Reply helpers (`sendTextReply` / `sendMediaReply`) are exported for use
- * by sibling modules (media/inbox, commands via CommandContext closures).
+ *   2. Compose-mode bypass — if the user is in compose mode, accumulate text + files
+ *   3. File-upload-mode bypass — if the user is in file-upload mode, save media
+ *   4. Agent routing      — text and media are forwarded to the ACP agent
  */
 
 import { type AgentConnection, type CommandContext, dispatchCommand } from "./commands.js";
 import type { WechatMessage, WechatMessageItem } from "./types.js";
-import { clearPromptRejector, getConnection, isRunning, killAgent, setPromptRejector } from "./agent/client.js";
+import {
+  clearPromptRejector,
+  ensureAgentRunning,
+  getConnection,
+  getCurrentCollector,
+  isRunning,
+  killAgent,
+  resetSessionState,
+  setPromptRejector,
+} from "./agent/agent.js";
 import { composeCancel, composeEnd, composeStart, handleComposeMode, isComposeMode } from "./media/compose.js";
 import { deleteSession, getSession, setSession, touchSession } from "./agent/session.js";
 import { downloadMedia, extractMediaItems } from "./media/download.js";
-import { ensureAgentRunning, getCurrentCollector, resetSessionState } from "./agent/lifecycle.js";
-import { getConfig, sendMessage, sendTyping } from "./wechat/api.js";
 import { handleUploadMode, isUploadMode, uploadEnd, uploadStart } from "./media/inbox.js";
+import { sendMediaReply, sendTextReply } from "./reply.js";
 import { cleanupUserDir } from "./media/cleanup.js";
+import { getWechatClient } from "./wechat/client.js";
 import { loadConfig } from "./config.js";
 import path from "node:path";
 import { splitText } from "./utils.js";
-import { uploadAndBuildMediaItems } from "./media/upload.js";
 
 // ---- message dispatch ----
 
@@ -134,8 +139,6 @@ async function routeToAgent(
   userText: string,
   mediaPaths: { filePath: string; size: number }[],
 ): Promise<void> {
-  const config = loadConfig();
-
   // Ensure the ACP agent child process is running for this user.
   try {
     await ensureAgentRunning(fromUserId, userTempDir);
@@ -178,9 +181,10 @@ async function routeToAgent(
 
   // Send typing indicator (state 1 = "typing") before the prompt
   try {
-    const configResp = await getConfig(config.baseUrl, config.token, fromUserId, contextToken);
+    const client = getWechatClient();
+    const configResp = await client.getConfig(fromUserId, contextToken);
     if (configResp.typing_ticket) {
-      await sendTyping(config.baseUrl, config.token, fromUserId, configResp.typing_ticket, 1);
+      await client.sendTyping(fromUserId, configResp.typing_ticket, 1);
     }
   } catch {}
 
@@ -190,10 +194,13 @@ async function routeToAgent(
   try {
     await new Promise<void>((resolve, reject) => {
       setPromptRejector(reject);
-      conn.prompt({
-        sessionId: session?.sessionId || fromUserId,
-        prompt: [{ type: "text", text: prompt }],
-      }).then(() => resolve(), reject).finally(clearPromptRejector);
+      conn
+        .prompt({
+          sessionId: session?.sessionId || fromUserId,
+          prompt: [{ type: "text", text: prompt }],
+        })
+        .then(() => resolve(), reject)
+        .finally(clearPromptRejector);
     });
   } catch (err) {
     console.error(`[dispatch] Prompt failed: ${(err as Error).message}`);
@@ -204,9 +211,10 @@ async function routeToAgent(
 
   // Send typing indicator (state 2 = "stopped") after the prompt completes
   try {
-    const configResp = await getConfig(config.baseUrl, config.token, fromUserId, contextToken);
+    const client = getWechatClient();
+    const configResp = await client.getConfig(fromUserId, contextToken);
     if (configResp.typing_ticket) {
-      await sendTyping(config.baseUrl, config.token, fromUserId, configResp.typing_ticket, 2);
+      await client.sendTyping(fromUserId, configResp.typing_ticket, 2);
     }
   } catch {}
 
@@ -223,50 +231,4 @@ async function routeToAgent(
 
   // Update the last-active timestamp for idle-timeout tracking
   touchSession(fromUserId);
-}
-
-// ---- reply helpers ----
-
-/**
- * Send a plain-text WeChat message.
- * Used by the dispatch pipeline and the media/inbox module.
- */
-export async function sendTextReply(toUserId: string, text: string, contextToken?: string): Promise<void> {
-  if (!text) return;
-  const config = loadConfig();
-  try {
-    await sendMessage(config.baseUrl, config.token, toUserId, [{ type: 1, text_item: { text } }], contextToken);
-    const preview = text.length > 30 ? text.slice(0, 30) + "…" : text;
-    console.log(`[dispatch] Replied text (${text.length} chars) to ${toUserId}:${preview}`);
-  } catch (err) {
-    console.error(`[dispatch] Reply failed: ${(err as Error).message}`);
-  }
-}
-
-/**
- * Upload a local file to WeChat CDN and send it as a media message.
- * An optional caption is sent as a separate text message before the file.
- */
-async function sendMediaReply(
-  toUserId: string,
-  filePath: string,
-  contextToken?: string,
-  caption?: string,
-): Promise<void> {
-  const config = loadConfig();
-  const result = await uploadAndBuildMediaItems(config.baseUrl, config.token, filePath, toUserId, config.cdnBaseUrl);
-
-  if (caption) {
-    await sendMessage(
-      config.baseUrl,
-      config.token,
-      toUserId,
-      [{ type: 1, text_item: { text: caption } }],
-      contextToken,
-    );
-  }
-
-  for (const item of result.items) {
-    await sendMessage(config.baseUrl, config.token, toUserId, [item], contextToken);
-  }
 }

@@ -8,46 +8,34 @@
  * original positions. /msg-cancel drops the accumulated content.
  */
 
+import { getComposeAccum, getComposeModeUsers } from "../state.js";
 import type { WechatMessage } from "../types.js";
 import { downloadMedia } from "./download.js";
 
-type ComposeItem = { kind: "text"; content: string } | { kind: "file"; path: string; size: number };
-
-/** Set of user IDs currently in compose mode. */
-const composeModeUsers = new Set<string>();
-/** Per-user ordered list of items during the compose span. */
-const composeAccum = new Map<string, ComposeItem[]>();
+export type ComposeItem = { kind: "text"; content: string } | { kind: "file"; path: string; size: number };
 
 export function isComposeMode(userId: string): boolean {
-  return composeModeUsers.has(userId);
+  return getComposeModeUsers().has(userId);
 }
 
 export function composeStart(userId: string): void {
-  composeModeUsers.add(userId);
-  composeAccum.set(userId, []);
+  getComposeModeUsers().add(userId);
+  getComposeAccum().set(userId, []);
 }
 
-/**
- * Exit compose mode and return the accumulated items as a single prompt
- * string, with file references inline at their original positions.
- */
 export function composeEnd(userId: string): string | null {
-  if (!composeModeUsers.has(userId)) return null;
-  composeModeUsers.delete(userId);
-  const items = composeAccum.get(userId) || [];
-  composeAccum.delete(userId);
+  if (!getComposeModeUsers().has(userId)) return null;
+  getComposeModeUsers().delete(userId);
+  const items = getComposeAccum().get(userId) || [];
+  getComposeAccum().delete(userId);
   return items.length > 0 ? buildPrompt(items) : null;
 }
 
 export function composeCancel(userId: string): void {
-  composeModeUsers.delete(userId);
-  composeAccum.delete(userId);
+  getComposeModeUsers().delete(userId);
+  getComposeAccum().delete(userId);
 }
 
-/**
- * Handle an inbound message while the user is in compose mode.
- * Accumulates text and downloads media attachments in order.
- */
 export async function handleComposeMode(
   message: WechatMessage,
   fromUserId: string,
@@ -56,7 +44,7 @@ export async function handleComposeMode(
   _contextToken: string,
   maxFileSize?: number,
 ): Promise<void> {
-  const items = composeAccum.get(fromUserId) || [];
+  const items = getComposeAccum().get(fromUserId) || [];
 
   for (const item of message.item_list || []) {
     if (item.type === 1 && item.text_item?.text) {
@@ -76,10 +64,9 @@ export async function handleComposeMode(
     }
   }
 
-  composeAccum.set(fromUserId, items);
+  getComposeAccum().set(fromUserId, items);
 }
 
-/** Build a single prompt string from the ordered compose items. */
 function buildPrompt(items: ComposeItem[]): string {
   const parts: string[] = [];
   for (const item of items) {

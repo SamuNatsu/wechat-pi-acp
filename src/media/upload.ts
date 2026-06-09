@@ -12,9 +12,9 @@
 
 import type { UploadResult, WechatMessageItem } from "../types.js";
 import { aesEcbPaddedSize, encryptAesEcb, randHex } from "./crypto.js";
-import { getUploadUrl as apiGetUploadUrl } from "../wechat/api.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import { getWechatClient } from "../wechat/client.js";
 import mime from "mime/lite";
 import path from "node:path";
 
@@ -78,19 +78,13 @@ async function uploadBufferToCdn(
 /**
  * Upload a local file to the WeChat CDN and build the message items
  * needed to embed it in an outbound sendMessage call.
- *
- * @param baseUrl   The agent's API base URL
- * @param token     The authenticated bot token
- * @param filePath  Path to the local file to upload
- * @param toUserId  Target WeChat user ID
  */
 export async function uploadAndBuildMediaItems(
-  baseUrl: string,
-  token: string,
   filePath: string,
   toUserId: string,
   cdnBaseUrl: string,
 ): Promise<UploadResult> {
+  const client = getWechatClient();
   const plaintext = await fs.readFile(filePath);
   const rawsize = plaintext.length;
   const rawfilemd5 = crypto.createHash("md5").update(plaintext).digest("hex");
@@ -101,8 +95,7 @@ export async function uploadAndBuildMediaItems(
 
   console.log(`[upload] ${filePath}: rawsize=${rawsize}, padded=${filesize}, mediaType=${mediaType}`);
 
-  // Request an upload URL from the WeChat API
-  const uploadResp = await apiGetUploadUrl(baseUrl, token, {
+  const uploadResp = await client.getUploadUrl({
     filekey,
     media_type: mediaType,
     to_user_id: toUserId,
@@ -120,7 +113,14 @@ export async function uploadAndBuildMediaItems(
   }
 
   // Encrypt and upload the file data
-  const downloadParam = await uploadBufferToCdn(plaintext, aeskey, uploadFullUrl, uploadParam || "", filekey, cdnBaseUrl);
+  const downloadParam = await uploadBufferToCdn(
+    plaintext,
+    aeskey,
+    uploadFullUrl,
+    uploadParam || "",
+    filekey,
+    cdnBaseUrl,
+  );
   const aesKeyB64 = Buffer.from(aeskey.toString("hex")).toString("base64");
 
   console.log(`[upload] Success: downloadParam=${downloadParam}...`);

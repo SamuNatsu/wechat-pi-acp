@@ -19,10 +19,12 @@ const DEFAULTS: AppConfig = {
   acpCommand: "npx pi-acp",
   idleTimeoutMs: 600_000,
   mediaTempDir: path.join(os.tmpdir(), "wechat-pi-acp"),
-  fileTtlMs: 3_600_000,
   maxFileSize: 104_857_600,
   botAgent: `WeChat-Pi-ACP/${VERSION}`,
 };
+
+/** Lazily initialized config cache — populated on first loadConfig() or saveConfig(). */
+let cachedConfig: AppConfig | null = null;
 
 /** Return the absolute path to config.json. */
 export function resolveConfigPath(): string {
@@ -45,10 +47,19 @@ export function resolveTokensPath(): string {
 }
 
 /**
- * Load the app config, merging user overrides onto DEFAULTS.
- * Creates the config directory if it doesn't exist.
+ * Return the cached app config, reading from disk only on first call.
+ * Use reloadConfig() to force a disk read (e.g. after external mutation).
  */
 export function loadConfig(): AppConfig {
+  if (cachedConfig) return cachedConfig;
+  return reloadConfig();
+}
+
+/**
+ * Re-read config from disk, replacing the cache.
+ * Called during startup; also useful if config.json is modified externally.
+ */
+export function reloadConfig(): AppConfig {
   try {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
   } catch {}
@@ -56,27 +67,28 @@ export function loadConfig(): AppConfig {
     if (fs.existsSync(CONFIG_PATH)) {
       const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
       const parsed = JSON.parse(raw) as Partial<AppConfig>;
-      return { ...DEFAULTS, ...parsed };
+      cachedConfig = { ...DEFAULTS, ...parsed };
+      return cachedConfig;
     }
   } catch {}
-  return { ...DEFAULTS };
+  cachedConfig = { ...DEFAULTS };
+  return cachedConfig;
 }
 
 /**
- * Persist partial config updates merged with the existing config.
+ * Persist a partial config update to disk and update the in-memory cache.
  * Restricts file permissions to owner-only (0o600).
  */
 export function saveConfig(update: Partial<AppConfig>): AppConfig {
   try {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
   } catch {}
-  const current = loadConfig();
-  const merged = { ...current, ...update };
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2), "utf-8");
+  cachedConfig = { ...(cachedConfig || DEFAULTS), ...update };
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cachedConfig, null, 2), "utf-8");
   try {
     fs.chmodSync(CONFIG_PATH, 0o600);
   } catch {}
-  return merged;
+  return cachedConfig;
 }
 
 /**

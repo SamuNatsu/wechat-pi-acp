@@ -6,6 +6,7 @@ export default defineConfig({
   platform: "node",
   target: "esnext",
   clean: true,
+  dts: false,
   deps: {
     neverBundle: ["@agentclientprotocol/sdk", "qrcode-terminal"],
   },
