@@ -18,15 +18,12 @@ import fs from "node:fs/promises";
 import mime from "mime/lite";
 import path from "node:path";
 
-/** CDN upload base URL — used when uploadFullUrl is not provided. */
-const CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c";
-
 /**
  * Map a file extension to a WeChat media type.
  * 1 = image, 2 = video, 3 = generic file.
  */
 export function getMediaType(filePath: string): number {
-  const type = mime.getType(filePath) || "application/octect-stream";
+  const type = mime.getType(filePath) || "application/octet-stream";
   if (type.startsWith("image/")) return 1;
   if (type.startsWith("video/")) return 2;
   return 3;
@@ -43,12 +40,13 @@ async function uploadBufferToCdn(
   uploadFullUrl: string | undefined,
   uploadParam: string,
   filekey: string,
+  cdnBaseUrl: string,
 ): Promise<string> {
   const ciphertext = encryptAesEcb(plaintext, aeskey);
 
   const cdnUrl =
     uploadFullUrl ||
-    `${CDN_BASE}/upload?encrypted_query_param=${encodeURIComponent(uploadParam)}&filekey=${encodeURIComponent(filekey)}`;
+    `${cdnBaseUrl}/upload?encrypted_query_param=${encodeURIComponent(uploadParam)}&filekey=${encodeURIComponent(filekey)}`;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     const res = await fetch(cdnUrl, {
@@ -91,6 +89,7 @@ export async function uploadAndBuildMediaItems(
   token: string,
   filePath: string,
   toUserId: string,
+  cdnBaseUrl: string,
 ): Promise<UploadResult> {
   const plaintext = await fs.readFile(filePath);
   const rawsize = plaintext.length;
@@ -121,7 +120,7 @@ export async function uploadAndBuildMediaItems(
   }
 
   // Encrypt and upload the file data
-  const downloadParam = await uploadBufferToCdn(plaintext, aeskey, uploadFullUrl, uploadParam || "", filekey);
+  const downloadParam = await uploadBufferToCdn(plaintext, aeskey, uploadFullUrl, uploadParam || "", filekey, cdnBaseUrl);
   const aesKeyB64 = Buffer.from(aeskey.toString("hex")).toString("base64");
 
   console.log(`[upload] Success: downloadParam=${downloadParam}...`);

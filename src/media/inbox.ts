@@ -53,6 +53,7 @@ export async function handleUploadMode(
   userTempDir: string,
   cdnBaseUrl: string,
   contextToken: string,
+  maxFileSize?: number,
 ): Promise<void> {
   const mediaExtracts = extractMediaItems(message);
   const list = uploadFiles.get(fromUserId) || [];
@@ -69,7 +70,7 @@ export async function handleUploadMode(
         // file does not exist, proceed
       }
 
-      const result = await downloadMedia(cdnBaseUrl, media.cdn, userTempDir, media.type);
+      const result = await downloadMedia(cdnBaseUrl, media.cdn, userTempDir, media.type, maxFileSize);
       if (result) {
         list.push({ name: path.basename(result.filePath), size: result.size });
       }

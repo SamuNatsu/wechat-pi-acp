@@ -73,7 +73,7 @@ function buildBaseInfo(): Record<string, string> {
 
 /**
  * Generic authenticated POST to the WeChat API.
- * Returns the raw response body string. Throws on non-2xx.
+ * Returns the raw response body string. Throws on non-2xx or when the external signal aborts.
  */
 export async function apiPost(
   baseUrl: string,
@@ -81,17 +81,23 @@ export async function apiPost(
   body: Record<string, unknown>,
   token?: string | null,
   timeoutMs?: number,
+  abortSignal?: AbortSignal,
 ): Promise<string> {
   const url = `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
   const headers = token ? buildAuthHeaders(token) : { ...buildCommonHeaders(), "Content-Type": "application/json" };
-  const controller = timeoutMs ? new AbortController() : undefined;
-  const t = controller && timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  const timeoutController = timeoutMs ? new AbortController() : undefined;
+  const t = timeoutController && timeoutMs ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
+  const combinedSignal = timeoutController
+    ? abortSignal
+      ? AbortSignal.any([timeoutController.signal, abortSignal])
+      : timeoutController.signal
+    : abortSignal;
   try {
     const res = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: controller?.signal,
+      signal: combinedSignal,
     });
     const text = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
@@ -103,18 +109,28 @@ export async function apiPost(
 
 /**
  * Generic unauthenticated GET to the WeChat API.
- * Returns the raw response body string. Throws on non-2xx.
+ * Returns the raw response body string. Throws on non-2xx or when the external signal aborts.
  */
-export async function apiGet(baseUrl: string, endpoint: string, timeoutMs?: number): Promise<string> {
+export async function apiGet(
+  baseUrl: string,
+  endpoint: string,
+  timeoutMs?: number,
+  abortSignal?: AbortSignal,
+): Promise<string> {
   const url = `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
   const headers = buildCommonHeaders();
-  const controller = timeoutMs ? new AbortController() : undefined;
-  const t = controller && timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  const timeoutController = timeoutMs ? new AbortController() : undefined;
+  const t = timeoutController && timeoutMs ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
+  const combinedSignal = timeoutController
+    ? abortSignal
+      ? AbortSignal.any([timeoutController.signal, abortSignal])
+      : timeoutController.signal
+    : abortSignal;
   try {
     const res = await fetch(url, {
       method: "GET",
       headers,
-      signal: controller?.signal,
+      signal: combinedSignal,
     });
     const text = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
@@ -161,6 +177,7 @@ export async function getUpdates(
     },
     token,
     t,
+    abortSignal,
   );
   return JSON.parse(raw) as GetUpdatesResponse;
 }

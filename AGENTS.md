@@ -13,7 +13,7 @@ pnpm format:check   # prettier --check src/
 ```
 
 - `tsdown` is the bundler, **not `tsc`**. The build step is needed before `pnpm start`. Build cleans `dist/` first (`clean: true`).
-- `@agentclientprotocol/sdk` and `qrcode-terminal` are **excluded from the bundle** (`neverBundle` in tsdown config). They must be available at runtime. Static top-level imports of the ACP SDK are fine — tsdown preserves them as externals. `qrcode-terminal` is still imported dynamically in `wechat/auth.ts`.
+- `@agentclientprotocol/sdk` and `qrcode-terminal` are **excluded from the bundle** (`neverBundle` in tsdown config). They must be available at runtime. Static top-level imports of the ACP SDK are fine — tsdown preserves them as externals. `qrcode-terminal` is imported dynamically in `wechat/auth.ts`.
 - Package manager is **pnpm** (lockfile: `pnpm-lock.yaml`).
 - `cac` is used for CLI argument parsing (not manual `process.argv` parsing).
 
@@ -46,6 +46,7 @@ pnpm format:check   # prettier --check src/
 
 - Config file is **chmod 0o600** on save.
 - The ACP agent command defaults to `npx pi-acp` and runs in each user's inbox directory (`<mediaTempDir>/inbox/<user_id>/`).
+- `idleTimeoutMs` (default 600s) in config is tracked via `lastActiveAt` timestamps but **not yet enforced** — no code kills the agent on idle. `lastActiveAt` is only used by `/status`.
 
 ## Architecture
 
@@ -75,19 +76,31 @@ src/media/inbox.ts      # file upload mode: intercept, conflict check, collect f
 src/media/compose.ts    # message compose mode: accumulate text + files in order, send as one prompt
 ```
 
+## Message Dispatch Pipeline
+
+Each inbound message flows through `dispatch.ts` in this order (first match wins):
+
+1. **Command intercept** — slash commands (`/new`, `/cancel`, etc.) handled locally by `commands.ts`
+2. **Compose-mode bypass** — if user is in `/msg-start` mode, text/files are accumulated, not sent to agent
+3. **File-upload-mode bypass** — if user is in `/file-upload-start` mode, media is downloaded and tracked
+4. **Agent routing** — media is downloaded to `<inboxDir>/`, agent is started/resumed, prompt is sent
+
 ## Non-Obvious Conventions
 
 - **ESM only** (`"type": "module"`). All imports use `.js` extensions (Node ESM resolution).
-- The ACP SDK is **statically imported** (`import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"`) in `src/agent/lifecycle.ts` and `src/agent/client.ts`. SDK types (Agent, Client, SessionUpdate, etc.) are imported from the same package in `handler.ts`, `commands.ts`, and `dispatch.ts`.
+- The ACP SDK is **statically imported** in `src/agent/lifecycle.ts` and `src/agent/client.ts`. SDK types (Agent, Client, SessionUpdate, etc.) are imported from the same package in `handler.ts`, `commands.ts`, and `dispatch.ts`.
 - User-facing messages are **Chinese**, log messages are **English**.
 - Slash commands must start with `/` and match exactly (case-sensitive).
 - The agent runs as a **single child process**, shared across users with session isolation via `loadSession`/`newSession`. Only one agent runs at a time — switching users kills the current agent.
+- **All permissions are auto-approved** — `handler.ts` hardcodes `{ outcome: "approved" }` for every requestPermission call.
 - `WEIXIN-API.md` documents the reverse-engineered WeChat API — it is the reference for the API surface, not the source code.
-- Text replies are **streamed in real-time** via the collector: consecutive `agent_message_chunk` updates are accumulated and flushed when the update kind changes (e.g. agent starts thinking). `agent_thought_chunk` blocks are wrapped in fenced code blocks (`🤔 思考`). Tool-call notifications emit a brief `🔧 <title>` notice; raw `tool_call_update` output is suppressed.
-- Temp media files are stored under `<mediaTempDir>/inbox/<sanitized_user_id>/` and cleaned per-user on `/new` and `/file-clear`.
+- Text replies are **streamed in real-time** via the collector: consecutive `agent_message_chunk` updates are accumulated and flushed when the update kind changes (e.g. agent starts thinking). `agent_thought_chunk` blocks are wrapped in `**🤔 思考：**\n\n<text>` (not code fences — Markdown bold). Tool-call notifications emit a brief `🔧 正在使用工具：<title>` notice; raw `tool_call_update` output is suppressed. Message chunks before the first thought are also suppressed.
+- Temp media files are stored under `<mediaTempDir>/inbox/<sanitized_user_id>/` (where sanitize = `replace(/[@.]/g, "_")`) and cleaned per-user on `/new` and `/file-clear`.
 - The agent's working directory is **fixed to the user's inbox directory** — downloaded media is directly accessible to the agent.
 - `pnpm-workspace.yaml` exists but this is **not a monorepo** — it only contains `allowBuilds` flags for transitive native deps.
 - `@tencent-weixin/openclaw-weixin` in `devDependencies` is the upstream WeChat Bot HTTP client used as reference. It is **not imported** — it only provides type stubs and serves as the source for `WEIXIN-API.md`.
+- `/think` sets agent session mode via `setSessionMode()` — valid levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`.
+- `/file-send` is restricted to files within the inbox directory — absolute paths outside it are rejected.
 
 ## CLI Flags
 

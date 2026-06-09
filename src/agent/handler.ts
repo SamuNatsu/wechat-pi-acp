@@ -36,15 +36,16 @@ export interface SessionMeta {
  *
  * @param onUpdate     Called for every sessionUpdate from the agent (text chunks, tool calls, etc.)
  * @param onPermission Called when the agent requests a permission; defaults to "approved"
+ * @param cwd          Working directory of the agent — file read/write is restricted to this tree
  */
 export function createHandlerFactory(
   onUpdate: (update: SessionUpdate) => void,
   onPermission?: (params: RequestPermissionRequest) => RequestPermissionResponse,
+  cwd?: string,
 ): (agent: Agent) => Client {
   return (_agent: Agent): Client => ({
     sessionUpdate(params: SessionNotification): Promise<void> {
       if (params?.update) {
-        //logUpdate(params.update);
         onUpdate(params.update);
       }
       return Promise.resolve();
@@ -56,19 +57,28 @@ export function createHandlerFactory(
       );
     },
 
-    /** Read a text file on behalf of the agent (ACP sandbox escape). */
+    /** Read a text file on behalf of the agent — restricted to the agent's working directory. */
     async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
       const fs = await import("node:fs/promises");
-      const content = await fs.readFile(params.path, "utf-8");
+      const nodePath = await import("node:path");
+      const resolved = nodePath.resolve(params.path);
+      if (cwd && !resolved.startsWith(nodePath.resolve(cwd) + nodePath.sep) && resolved !== nodePath.resolve(cwd)) {
+        throw new Error(`Access denied: ${params.path} is outside the agent workspace`);
+      }
+      const content = await fs.readFile(resolved, "utf-8");
       return { content };
     },
 
-    /** Write a text file on behalf of the agent (ACP sandbox escape). */
+    /** Write a text file on behalf of the agent — restricted to the agent's working directory. */
     async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
       const fs = await import("node:fs/promises");
       const nodePath = await import("node:path");
-      await fs.mkdir(nodePath.dirname(params.path), { recursive: true });
-      await fs.writeFile(params.path, params.content, "utf-8");
+      const resolved = nodePath.resolve(params.path);
+      if (cwd && !resolved.startsWith(nodePath.resolve(cwd) + nodePath.sep) && resolved !== nodePath.resolve(cwd)) {
+        throw new Error(`Access denied: ${params.path} is outside the agent workspace`);
+      }
+      await fs.mkdir(nodePath.dirname(resolved), { recursive: true });
+      await fs.writeFile(resolved, params.content, "utf-8");
       return {};
     },
   });
@@ -92,6 +102,7 @@ export function createTextCollector() {
   let onFlush: (text: string) => void = () => {};
   const mediaFiles: unknown[] = [];
   let hasThought = false;
+  let hadOutput = false;
 
   let currentModeId: string | null = null;
   let sessionTitle: string | null = null;
@@ -101,6 +112,7 @@ export function createTextCollector() {
     const text = buf.trim();
     buf = "";
     if (!text) return;
+    hadOutput = true;
     if (bufKind === "thought") {
       onFlush(`**🤔 思考：**\n\n${text}`);
     } else {
@@ -121,10 +133,15 @@ export function createTextCollector() {
       buf = "";
       bufKind = null;
       hasThought = false;
+      hadOutput = false;
       mediaFiles.length = 0;
     },
     getText(): string {
       return buf;
+    },
+    /** Whether any text was flushed via onFlush since the last reset. */
+    hasOutput(): boolean {
+      return hadOutput;
     },
     /** Replace the flush callback — called by dispatch on each new message. */
     setOnFlush(fn: (text: string) => void): void {

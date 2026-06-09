@@ -14,6 +14,8 @@ import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 let proc: ChildProcess | null = null;
 /** ACP SDK ClientSideConnection instance (null when idle). */
 let conn: ClientSideConnection | null = null;
+/** Rejector for the currently pending prompt (null when no prompt in-flight). */
+let promptRejector: ((err: Error) => void) | null = null;
 
 /** Get the current ACP SDK connection (used by dispatch and lifecycle). */
 export function getConnection(): ClientSideConnection | null {
@@ -28,6 +30,16 @@ export function getProcess(): ChildProcess | null {
 /** Whether the agent process is currently alive. */
 export function isRunning(): boolean {
   return proc !== null && !proc.killed;
+}
+
+/** Register a rejector for the current prompt — called by dispatch before conn.prompt(). */
+export function setPromptRejector(r: (err: Error) => void): void {
+  promptRejector = r;
+}
+
+/** Clear the prompt rejector — called by dispatch after conn.prompt() completes. */
+export function clearPromptRejector(): void {
+  promptRejector = null;
 }
 
 /**
@@ -45,6 +57,10 @@ export function killAgent(): void {
         if (p && !p.killed) p.kill("SIGKILL");
       } catch {}
     }, 5000);
+  }
+  if (promptRejector) {
+    promptRejector(new Error("Agent was killed"));
+    promptRejector = null;
   }
   proc = null;
   conn = null;
@@ -71,13 +87,22 @@ export function spawnAndConnect(acpCommand: string, cwd: string, handlerFactory:
 
   proc.on("exit", (code: number | null) => {
     console.log(`[acp] Agent process exited with code ${code}`);
+    if (promptRejector) {
+      promptRejector(new Error(`Agent process exited with code ${code}`));
+      promptRejector = null;
+    }
     proc = null;
     conn = null;
   });
 
   proc.on("error", (err: Error) => {
     console.error(`[acp] Agent spawn error: ${err.message}`);
+    if (promptRejector) {
+      promptRejector(new Error(`Agent process error: ${err.message}`));
+      promptRejector = null;
+    }
     proc = null;
+    conn = null;
   });
 
   // Bridge child-process stdio to an NDJSON stream

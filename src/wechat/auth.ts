@@ -16,7 +16,6 @@ const MAX_QR_REFRESH_COUNT = 3;
 const DEFAULT_WAIT_TIMEOUT_MS = 480_000;
 
 let activeLogin: ActiveLogin | null = null;
-let scannedPrinted = false;
 
 /** Render the QR code in the terminal via qrcode-terminal, with a fallback URL. */
 async function displayQRCode(qrcodeUrl: string): Promise<void> {
@@ -44,24 +43,6 @@ async function readStdin(prompt: string): Promise<string> {
   });
 }
 
-/** Refresh the QR code (called when it expires or verification is blocked). */
-async function refreshQR(botType: string, qrRefreshCount: number): Promise<boolean> {
-  process.stdout.write(`\n正在刷新二维码...(${qrRefreshCount}/${MAX_QR_REFRESH_COUNT})\n`);
-  try {
-    const resp = await fetchQRCode(FIXED_BASE_URL, botType);
-    activeLogin!.qrcode = resp.qrcode;
-    activeLogin!.qrcodeUrl = resp.qrcode_img_content;
-    activeLogin!.startedAt = Date.now();
-    scannedPrinted = false;
-    process.stdout.write(`二维码已更新，请重新扫描。\n\n`);
-    await displayQRCode(resp.qrcode_img_content);
-    return true;
-  } catch (err) {
-    process.stderr.write(`刷新二维码失败: ${(err as Error).message}\n`);
-    return false;
-  }
-}
-
 /**
  * Run the full QR login flow:
  *   1. Fetch QR code
@@ -72,6 +53,26 @@ async function refreshQR(botType: string, qrRefreshCount: number): Promise<boole
 export async function loginWithQR(opts?: LoginOptions): Promise<LoginResult> {
   const botType = opts?.botType || DEFAULT_BOT_TYPE;
   const verbose = opts?.verbose || false;
+
+  let scannedPrinted = false;
+
+  /** Refresh the QR code (called when it expires or verification is blocked). */
+  async function refreshQR(qrRefreshCount: number): Promise<boolean> {
+    process.stdout.write(`\n正在刷新二维码...(${qrRefreshCount}/${MAX_QR_REFRESH_COUNT})\n`);
+    try {
+      const resp = await fetchQRCode(FIXED_BASE_URL, botType);
+      activeLogin!.qrcode = resp.qrcode;
+      activeLogin!.qrcodeUrl = resp.qrcode_img_content;
+      activeLogin!.startedAt = Date.now();
+      scannedPrinted = false;
+      process.stdout.write(`二维码已更新，请重新扫描。\n\n`);
+      await displayQRCode(resp.qrcode_img_content);
+      return true;
+    } catch (err) {
+      process.stderr.write(`刷新二维码失败: ${(err as Error).message}\n`);
+      return false;
+    }
+  }
 
   process.stdout.write("\n正在获取二维码...\n");
   let resp;
@@ -135,14 +136,14 @@ export async function loginWithQR(opts?: LoginOptions): Promise<LoginResult> {
       case "expired":
         qrRefreshCount++;
         if (qrRefreshCount > MAX_QR_REFRESH_COUNT) throw new Error("二维码多次失效，连接流程已停止。请稍后再试。");
-        if (!(await refreshQR(botType, qrRefreshCount))) throw new Error("刷新二维码失败");
+        if (!(await refreshQR(qrRefreshCount))) throw new Error("刷新二维码失败");
         break;
 
       case "verify_code_blocked":
         pendingVerifyCode = undefined;
         qrRefreshCount++;
         if (qrRefreshCount > MAX_QR_REFRESH_COUNT) throw new Error("多次输入错误，连接流程已停止。请稍后再试。");
-        if (!(await refreshQR(botType, qrRefreshCount))) throw new Error("刷新二维码失败");
+        if (!(await refreshQR(qrRefreshCount))) throw new Error("刷新二维码失败");
         break;
 
       case "scaned_but_redirect": {

@@ -18,11 +18,7 @@ let purgeTimer: ReturnType<typeof setInterval> | null = null;
 /** Recursively delete a user's temp inbox directory. */
 export async function cleanupUserDir(userDir: string): Promise<void> {
   try {
-    const entries = await fs.readdir(userDir);
-    for (const entry of entries) {
-      await fs.rm(path.join(userDir, entry), { recursive: true, force: true });
-    }
-    await fs.rmdir(userDir).catch(() => {});
+    await fs.rm(userDir, { recursive: true, force: true });
     console.log(`[cleanup] Cleared user dir: ${userDir}`);
   } catch {}
 }

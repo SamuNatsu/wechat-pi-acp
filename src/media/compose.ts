@@ -54,6 +54,7 @@ export async function handleComposeMode(
   userTempDir: string,
   cdnBaseUrl: string,
   _contextToken: string,
+  maxFileSize?: number,
 ): Promise<void> {
   const items = composeAccum.get(fromUserId) || [];
 
@@ -61,16 +62,16 @@ export async function handleComposeMode(
     if (item.type === 1 && item.text_item?.text) {
       items.push({ kind: "text", content: item.text_item.text });
     } else if (item.type === 2 && item.image_item?.media) {
-      const result = await downloadMedia(cdnBaseUrl, item.image_item.media, userTempDir, "image");
+      const result = await downloadMedia(cdnBaseUrl, item.image_item.media, userTempDir, "image", maxFileSize);
       if (result) items.push({ kind: "file", path: result.filePath, size: result.size });
     } else if (item.type === 4 && item.file_item?.media) {
-      const result = await downloadMedia(cdnBaseUrl, item.file_item.media, userTempDir, "file");
+      const result = await downloadMedia(cdnBaseUrl, item.file_item.media, userTempDir, "file", maxFileSize);
       if (result) items.push({ kind: "file", path: result.filePath, size: result.size });
     } else if (item.type === 5 && item.video_item?.media) {
-      const result = await downloadMedia(cdnBaseUrl, item.video_item.media, userTempDir, "video");
+      const result = await downloadMedia(cdnBaseUrl, item.video_item.media, userTempDir, "video", maxFileSize);
       if (result) items.push({ kind: "file", path: result.filePath, size: result.size });
     } else if (item.type === 3 && item.voice_item?.media) {
-      const result = await downloadMedia(cdnBaseUrl, item.voice_item.media, userTempDir, "voice");
+      const result = await downloadMedia(cdnBaseUrl, item.voice_item.media, userTempDir, "voice", maxFileSize);
       if (result) items.push({ kind: "file", path: result.filePath, size: result.size });
     }
   }

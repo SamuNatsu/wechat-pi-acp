@@ -13,12 +13,12 @@
 
 import { type AgentConnection, type CommandContext, dispatchCommand } from "./commands.js";
 import type { WechatMessage, WechatMessageItem } from "./types.js";
+import { clearPromptRejector, getConnection, isRunning, killAgent, setPromptRejector } from "./agent/client.js";
 import { composeCancel, composeEnd, composeStart, handleComposeMode, isComposeMode } from "./media/compose.js";
 import { deleteSession, getSession, setSession, touchSession } from "./agent/session.js";
 import { downloadMedia, extractMediaItems } from "./media/download.js";
 import { ensureAgentRunning, getCurrentCollector, resetSessionState } from "./agent/lifecycle.js";
 import { getConfig, sendMessage, sendTyping } from "./wechat/api.js";
-import { getConnection, isRunning, killAgent } from "./agent/client.js";
 import { handleUploadMode, isUploadMode, uploadEnd, uploadStart } from "./media/inbox.js";
 import { cleanupUserDir } from "./media/cleanup.js";
 import { loadConfig } from "./config.js";
@@ -95,7 +95,7 @@ export async function handleMessage(message: WechatMessage): Promise<void> {
   // When a user is in message-compose mode (started via /msg-start),
   // all non-command text and media are accumulated until /msg-end.
   if (isComposeMode(fromUserId)) {
-    await handleComposeMode(message, fromUserId, userTempDir, config.cdnBaseUrl, contextToken);
+    await handleComposeMode(message, fromUserId, userTempDir, config.cdnBaseUrl, contextToken, config.maxFileSize);
     return;
   }
 
@@ -104,7 +104,7 @@ export async function handleMessage(message: WechatMessage): Promise<void> {
   // every non-command message is routed to the inbox module which
   // downloads media, checks for name conflicts, and tracks the file list.
   if (isUploadMode(fromUserId)) {
-    await handleUploadMode(message, fromUserId, userTempDir, config.cdnBaseUrl, contextToken);
+    await handleUploadMode(message, fromUserId, userTempDir, config.cdnBaseUrl, contextToken, config.maxFileSize);
     return;
   }
 
@@ -116,7 +116,7 @@ export async function handleMessage(message: WechatMessage): Promise<void> {
   const mediaPaths: { filePath: string; size: number }[] = [];
   if (mediaExtracts.length > 0) {
     for (const media of mediaExtracts) {
-      const result = await downloadMedia(config.cdnBaseUrl, media.cdn, userTempDir, media.type);
+      const result = await downloadMedia(config.cdnBaseUrl, media.cdn, userTempDir, media.type, config.maxFileSize);
       if (result) mediaPaths.push(result);
     }
   }
@@ -188,9 +188,12 @@ async function routeToAgent(
   // finishes processing (the collector accumulates output concurrently)
   console.log(`[dispatch] Prompting agent: "${prompt.slice(0, 60)}..."`);
   try {
-    await conn.prompt({
-      sessionId: session?.sessionId || fromUserId,
-      prompt: [{ type: "text", text: prompt }],
+    await new Promise<void>((resolve, reject) => {
+      setPromptRejector(reject);
+      conn.prompt({
+        sessionId: session?.sessionId || fromUserId,
+        prompt: [{ type: "text", text: prompt }],
+      }).then(() => resolve(), reject).finally(clearPromptRejector);
     });
   } catch (err) {
     console.error(`[dispatch] Prompt failed: ${(err as Error).message}`);
@@ -209,12 +212,12 @@ async function routeToAgent(
 
   // Flush any remaining buffered text from the collector.
   // Most text was already sent in real-time via onFlush above.
-  const hadRemaining = collector.getText().length > 0;
+  const hadOutput = collector.hasOutput() || collector.getText().length > 0;
   collector.flush();
 
   // If the agent produced no output at all but media was received,
   // send a short acknowledgement
-  if (!hadRemaining && (!userText || mediaPaths.length > 0)) {
+  if (!hadOutput && (!userText || mediaPaths.length > 0)) {
     await sendTextReply(fromUserId, "✅ 已收到消息", contextToken);
   }
 
@@ -251,7 +254,7 @@ async function sendMediaReply(
   caption?: string,
 ): Promise<void> {
   const config = loadConfig();
-  const result = await uploadAndBuildMediaItems(config.baseUrl, config.token, filePath, toUserId);
+  const result = await uploadAndBuildMediaItems(config.baseUrl, config.token, filePath, toUserId, config.cdnBaseUrl);
 
   if (caption) {
     await sendMessage(

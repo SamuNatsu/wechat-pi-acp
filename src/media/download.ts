@@ -12,8 +12,8 @@ import { decryptAesEcb } from "./crypto.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-function ensureDir(dir: string) {
-  fs.mkdir(dir, { recursive: true }).catch(() => {});
+async function ensureDir(dir: string) {
+  await fs.mkdir(dir, { recursive: true }).catch(() => {});
 }
 
 /**
@@ -45,15 +45,17 @@ function parseAesKey(aesKeyField: string | undefined): Buffer | null {
  * @param media       CDN metadata (aes_key, encrypt_query_param, full_url)
  * @param tempDir     Local directory to save the decrypted file
  * @param prefix      Filename prefix (e.g. "image", "file", "voice", "video")
+ * @param maxFileSize Max allowed file size in bytes (files exceeding this are skipped)
  */
 export async function downloadMedia(
   cdnBaseUrl: string,
   media: CdnMedia,
   tempDir: string,
   prefix: string,
+  maxFileSize?: number,
 ): Promise<DownloadResult | null> {
   if (!media) return null;
-  ensureDir(tempDir);
+  await ensureDir(tempDir);
 
   // Extract the AES key from whichever field the server provided
   let aesKey = parseAesKey(media.aes_key);
@@ -84,6 +86,12 @@ export async function downloadMedia(
   }
 
   const ciphertext = Buffer.from(await res.arrayBuffer());
+
+  if (maxFileSize && ciphertext.length > maxFileSize) {
+    console.error(`[media] File exceeds size limit (${ciphertext.length} > ${maxFileSize}), skipping`);
+    return null;
+  }
+
   let plaintext: Buffer;
   try {
     plaintext = decryptAesEcb(ciphertext, aesKey);

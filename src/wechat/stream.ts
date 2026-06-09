@@ -94,9 +94,13 @@ export async function* streamMessages(
   }
 }
 
-/** Abortable sleep — rejects if the signal fires before the timeout. */
+/** Abortable sleep — rejects if the signal has already fired or fires before the timeout. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("aborted"));
+      return;
+    }
     const t = setTimeout(resolve, ms);
     if (signal)
       signal.addEventListener(

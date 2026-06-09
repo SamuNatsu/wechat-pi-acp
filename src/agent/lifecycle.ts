@@ -69,6 +69,7 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
   const handlerFactory = createHandlerFactory(
     (update) => collector.onUpdate(update),
     () => ({ outcome: "approved" }) as unknown as RequestPermissionResponse,
+    cwd,
   );
 
   currentCollector = collector;
@@ -79,6 +80,8 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
 
   console.log(`[agent] Connecting ACP agent for user ${userId} (cwd=${cwd})...`);
   spawnAndConnect(config.acpCommand, cwd, handlerFactory);
+
+  if (!isRunning()) throw new Error("Agent process failed to start");
 
   const conn = getConnection();
   if (!conn) throw new Error("Failed to connect to ACP agent");
