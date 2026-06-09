@@ -39,7 +39,7 @@
     "format:check": "prettier --check src/"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.22.0",
+    "@agentclientprotocol/sdk": "^0.22.1",
     "cac": "^7.0.0",
     "qrcode-terminal": "^0.12.0"
   },
