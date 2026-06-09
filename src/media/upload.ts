@@ -15,6 +15,7 @@ import { aesEcbPaddedSize, encryptAesEcb, randHex } from "./crypto.js";
 import { getUploadUrl as apiGetUploadUrl } from "../wechat/api.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import mime from "mime/lite";
 import path from "node:path";
 
 /** CDN upload base URL — used when uploadFullUrl is not provided. */
@@ -25,21 +26,10 @@ const CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c";
  * 1 = image, 2 = video, 3 = generic file.
  */
 export function getMediaType(filePath: string): number {
-  const ext = path.extname(filePath).toLowerCase();
-  const extMap: Record<string, number> = {
-    ".jpg": 1,
-    ".jpeg": 1,
-    ".png": 1,
-    ".gif": 1,
-    ".webp": 1,
-    ".bmp": 1,
-    ".svg": 1,
-    ".mp4": 2,
-    ".mov": 2,
-    ".avi": 2,
-    ".mkv": 2,
-  };
-  return extMap[ext] || 3;
+  const type = mime.getType(filePath) || "application/octect-stream";
+  if (type.startsWith("image/")) return 1;
+  if (type.startsWith("video/")) return 2;
+  return 3;
 }
 
 /**
@@ -56,12 +46,9 @@ async function uploadBufferToCdn(
 ): Promise<string> {
   const ciphertext = encryptAesEcb(plaintext, aeskey);
 
-  let cdnUrl: string;
-  if (uploadFullUrl) {
-    cdnUrl = uploadFullUrl;
-  } else {
-    cdnUrl = `${CDN_BASE}/upload?encrypted_query_param=${encodeURIComponent(uploadParam)}&filekey=${encodeURIComponent(filekey)}`;
-  }
+  const cdnUrl =
+    uploadFullUrl ||
+    `${CDN_BASE}/upload?encrypted_query_param=${encodeURIComponent(uploadParam)}&filekey=${encodeURIComponent(filekey)}`;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     const res = await fetch(cdnUrl, {
@@ -69,6 +56,7 @@ async function uploadBufferToCdn(
       headers: { "Content-Type": "application/octet-stream" },
       body: new Uint8Array(ciphertext),
     });
+
     if (res.status >= 400 && res.status < 500) {
       const errMsg = res.headers.get("x-error-message") || (await res.text());
       throw new Error(`CDN client error ${res.status}: ${errMsg}`);
@@ -80,10 +68,12 @@ async function uploadBufferToCdn(
       }
       throw new Error(`CDN upload failed after ${attempt} attempts`);
     }
+
     const downloadParam = res.headers.get("x-encrypted-param");
     if (!downloadParam) throw new Error("CDN response missing x-encrypted-param");
     return downloadParam;
   }
+
   throw new Error("unreachable");
 }
 
@@ -132,9 +122,9 @@ export async function uploadAndBuildMediaItems(
 
   // Encrypt and upload the file data
   const downloadParam = await uploadBufferToCdn(plaintext, aeskey, uploadFullUrl, uploadParam || "", filekey);
-  const aesKeyB64 = aeskey.toString("base64");
+  const aesKeyB64 = Buffer.from(aeskey.toString("hex")).toString("base64");
 
-  console.log(`[upload] Success: downloadParam=${downloadParam.slice(0, 30)}...`);
+  console.log(`[upload] Success: downloadParam=${downloadParam}...`);
 
   // Build the message item based on media type
   const items: WechatMessageItem[] = [];
