@@ -9,17 +9,29 @@ import { loadConfig } from "./config.js";
 import { uploadAndBuildMediaItems } from "./media/upload.js";
 
 /**
- * Send a plain-text WeChat message.
+ * Sequential send queue — all outbound sendMessage calls are serialized
+ * through this chain to avoid racing concurrent HTTP requests that can
+ * trigger WeChat API rate-limiting or stale-context-token rejection.
+ */
+let sendChain = Promise.resolve();
+
+/**
+ * Send a plain-text WeChat message. Messages are queued sequentially
+ * so rapid-fire agent output does not overwhelm the WeChat API.
  */
 export async function sendTextReply(toUserId: string, text: string, contextToken?: string): Promise<void> {
   if (!text) return;
-  try {
-    await getWechatClient().sendMessage(toUserId, [{ type: 1, text_item: { text } }], contextToken);
-    const preview = text.length > 30 ? text.slice(0, 30) + "…" : text;
-    console.log(`[reply] Replied text (${text.length} chars) to ${toUserId}:${preview}`);
-  } catch (err) {
-    console.error(`[reply] Reply failed: ${(err as Error).message}`);
-  }
+  const done = sendChain
+    .then(async () => {
+      await getWechatClient().sendMessage(toUserId, [{ type: 1, text_item: { text } }], contextToken);
+      const preview = text.length > 30 ? text.slice(0, 30) + "…" : text;
+      console.log(`[reply] Replied text (${text.length} chars) to ${toUserId}:${preview}`);
+    })
+    .catch((err: unknown) => {
+      console.error(`[reply] Reply failed: ${(err as Error).message}`);
+    });
+  sendChain = done;
+  return done;
 }
 
 /**

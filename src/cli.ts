@@ -136,12 +136,12 @@ async function main(): Promise<void> {
       const preview = texts.map((i: WechatMessageItem) => i.text_item!.text.slice(0, 40)).join(" | ") || "[非文本消息]";
       console.log(`[msg #${messageCount}] ${from}: ${preview}`);
 
-      // Route to dispatch: slash commands intercept, else agent prompt
-      try {
-        await handleMessage(event.msg);
-      } catch (err) {
+      // Route to dispatch: slash commands intercept, else agent prompt.
+      // Fire-and-forget so long-running agent prompts don't block the
+      // message loop — commands like /cancel can interrupt immediately.
+      void handleMessage(event.msg).catch((err) => {
         console.error(`[msg] 处理失败: ${(err as Error).message}`);
-      }
+      });
     }
   }
 }

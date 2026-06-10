@@ -45,8 +45,10 @@ pnpm format:check   # prettier --check src/
 | `/tmp/wechat-pi-acp/` | Temporary media downloads |
 
 - Config file is **chmod 0o600** on save.
-- `loadConfig()` caches the config in memory after first disk read — subsequent calls are free.
+- `loadConfig()` caches the config in memory after first disk read — subsequent calls are free. Use `reloadConfig()` to force a fresh disk read.
+- `config.ts` also exports `loadSessions()` / `saveSessions()` for the sessions.json store.
 - The ACP agent command defaults to `npx pi-acp` and runs in each user's inbox directory (`<mediaTempDir>/inbox/<user_id>/`).
+- `maxFileSize` defaults to 104_857_600 (100 MB) — rejects oversized uploads/downloads.
 - `idleTimeoutMs` (default 600s) in config is tracked via `lastActiveAt` timestamps but **not yet enforced** — no code kills the agent on idle. `lastActiveAt` is only used by `/status`.
 - `src/state.ts` centralizes module-level mutable state (agent process, sessions, compose/upload mode, QR login). Modules import getters/setters instead of using file-scoped variables.
 
@@ -95,7 +97,6 @@ Each inbound message flows through `dispatch.ts` in this order (first match wins
 - **`getWechatClient()` singleton** — most modules use this instead of threading `baseUrl`/`token` through function calls. Backed by `config.ts` cache.
 - **`agent/agent.ts`** merges the former `client.ts` (process + NDJSON) and `lifecycle.ts` (session management). Only one agent runs at a time — switching users kills the current process.
 - **All permissions auto-approved** — `handler.ts` hardcodes `{ outcome: "approved" }` for every `requestPermission` call.
-- **Path-restricted file I/O** — `handler.ts` `readTextFile` / `writeTextFile` validate that paths are within the agent's workspace directory.
 - **Prompt abortion** — if the agent process exits mid-prompt, `agent.ts` rejects the pending promise so dispatch doesn't hang.
 - User-facing messages are **Chinese**, log messages are **English**.
 - Slash commands must start with `/` and match exactly (case-sensitive).
@@ -113,7 +114,7 @@ Text replies are **streamed in real-time** via the collector:
 ## Non-Obvious Conventions
 
 - Temp media files are stored under `<mediaTempDir>/inbox/<sanitized_user_id>/` (where sanitize = `replace(/[@.]/g, "_")`) and cleaned per-user on `/new` and `/file-clear`.
-- The agent's working directory is **fixed to the user's inbox directory** — downloaded media is directly accessible to the agent.
+- The agent's working directory is **fixed to the user's inbox directory** — downloaded media is directly accessible to the agent. `handler.ts` validates that all file I/O paths stay within this workspace.
 - `pnpm-workspace.yaml` exists but this is **not a monorepo** — it only contains `allowBuilds` flags for transitive native deps.
 - `@tencent-weixin/openclaw-weixin` in `devDependencies` is the upstream WeChat Bot HTTP client used as reference. It is **not imported** — it only provides type stubs and serves as the source for `WEIXIN-API.md`.
 - `/think` sets agent session mode via `setSessionMode()` — valid levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`.

@@ -132,6 +132,9 @@ export async function handleMessage(message: WechatMessage): Promise<void> {
 
 // ---- agent routing helper ----
 
+/** True when a prompt is in-flight — guards against concurrent conn.prompt() calls. */
+let promptBusy = false;
+
 async function routeToAgent(
   fromUserId: string,
   userTempDir: string,
@@ -139,96 +142,108 @@ async function routeToAgent(
   userText: string,
   mediaPaths: { filePath: string; size: number }[],
 ): Promise<void> {
-  // Ensure the ACP agent child process is running for this user.
-  try {
-    await ensureAgentRunning(fromUserId, userTempDir);
-  } catch (err) {
-    console.error(`[dispatch] Failed to start agent: ${(err as Error).message}`);
-    await sendTextReply(fromUserId, `⚠️ Agent 启动失败: ${(err as Error).message}`, contextToken);
+  // Guard against concurrent prompts.  Must be checked and set BEFORE
+  // any await so two callers cannot race past the check together.
+  if (promptBusy) {
+    await sendTextReply(fromUserId, "⚠️ Agent 正在处理上一条消息，请稍后重试。", contextToken);
     return;
   }
+  promptBusy = true;
 
-  // Grab the collector (accumulates agent text output) and connection.
-  // Both are set by ensureAgentRunning above.
-  const collector = getCurrentCollector();
-  const conn = getConnection();
-  if (!collector || !conn) {
-    await sendTextReply(fromUserId, "⚠️ Agent 未运行，请稍后重试。", contextToken);
-    return;
-  }
-
-  // Wire the collector's flush callback to send real-time text chunks to
-  // WeChat. This is set per-message so the correct contextToken is used.
-  collector.setOnFlush((text: string): void => {
-    for (const chunk of splitText(text, 4000)) {
-      void sendTextReply(fromUserId, chunk, contextToken);
-    }
-  });
-
-  // Clear any leftover text from a previous prompt cycle
-  collector.reset();
-  const session = getSession(fromUserId);
-
-  // Build the prompt — plain text plus file paths if media was attached
-  let prompt = userText || "你好";
-  if (mediaPaths.length > 0) {
-    prompt += "\n\n用户发送了以下文件：";
-    for (const m of mediaPaths) {
-      prompt += `\n  - ${m.filePath} (${m.size} bytes)`;
-    }
-    prompt += "\n\n如果有需要，请使用 read 工具查看文件内容。";
-  }
-
-  // Send typing indicator (state 1 = "typing") before the prompt
   try {
-    const client = getWechatClient();
-    const configResp = await client.getConfig(fromUserId, contextToken);
-    if (configResp.typing_ticket) {
-      await client.sendTyping(fromUserId, configResp.typing_ticket, 1);
+    // Ensure the ACP agent child process is running for this user.
+    try {
+      await ensureAgentRunning(fromUserId, userTempDir);
+    } catch (err) {
+      console.error(`[dispatch] Failed to start agent: ${(err as Error).message}`);
+      await sendTextReply(fromUserId, `⚠️ Agent 启动失败: ${(err as Error).message}`, contextToken);
+      return;
     }
-  } catch {}
 
-  // Send the prompt to the ACP agent — this blocks until the agent
-  // finishes processing (the collector accumulates output concurrently)
-  console.log(`[dispatch] Prompting agent: "${prompt.slice(0, 60)}..."`);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      setPromptRejector(reject);
-      conn
-        .prompt({
-          sessionId: session?.sessionId || fromUserId,
-          prompt: [{ type: "text", text: prompt }],
-        })
-        .then(() => resolve(), reject)
-        .finally(clearPromptRejector);
+    // Grab the collector (accumulates agent text output) and connection.
+    // Both are set by ensureAgentRunning above.
+    const collector = getCurrentCollector();
+    const conn = getConnection();
+    if (!collector || !conn) {
+      await sendTextReply(fromUserId, "⚠️ Agent 未运行，请稍后重试。", contextToken);
+      return;
+    }
+
+    // Wire the collector's flush callback to send real-time text chunks to
+    // WeChat. This is set per-message so the correct contextToken is used.
+    collector.setOnFlush((text: string): void => {
+      for (const chunk of splitText(text, 4000)) {
+        void sendTextReply(fromUserId, chunk, contextToken);
+      }
     });
-  } catch (err) {
-    console.error(`[dispatch] Prompt failed: ${(err as Error).message}`);
+
+    // Clear any leftover text from a previous prompt cycle
     collector.reset();
-    await sendTextReply(fromUserId, `⚠️ Agent 请求失败: ${(err as Error).message}`, contextToken);
-    return;
-  }
+    const session = getSession(fromUserId);
 
-  // Send typing indicator (state 2 = "stopped") after the prompt completes
-  try {
-    const client = getWechatClient();
-    const configResp = await client.getConfig(fromUserId, contextToken);
-    if (configResp.typing_ticket) {
-      await client.sendTyping(fromUserId, configResp.typing_ticket, 2);
+    // Build the prompt — plain text plus file paths if media was attached
+    let prompt = userText || "你好";
+    if (mediaPaths.length > 0) {
+      prompt += "\n\n用户发送了以下文件：";
+      for (const m of mediaPaths) {
+        prompt += `\n  - ${m.filePath} (${m.size} bytes)`;
+      }
+      prompt += "\n\n如果有需要，请使用 read 工具查看文件内容。";
     }
-  } catch {}
 
-  // Flush any remaining buffered text from the collector.
-  // Most text was already sent in real-time via onFlush above.
-  const hadOutput = collector.hasOutput() || collector.getText().length > 0;
-  collector.flush();
+    // Send typing indicator (state 1 = "typing") before the prompt
+    try {
+      const client = getWechatClient();
+      const configResp = await client.getConfig(fromUserId, contextToken);
+      if (configResp.typing_ticket) {
+        await client.sendTyping(fromUserId, configResp.typing_ticket, 1);
+      }
+    } catch {}
 
-  // If the agent produced no output at all but media was received,
-  // send a short acknowledgement
-  if (!hadOutput && (!userText || mediaPaths.length > 0)) {
-    await sendTextReply(fromUserId, "✅ 已收到消息", contextToken);
+    // Send the prompt to the ACP agent — this blocks until the agent
+    // finishes processing (the collector accumulates output concurrently)
+    console.log(`[dispatch] Prompting agent: "${prompt.slice(0, 60)}..."`);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        setPromptRejector(reject);
+        conn
+          .prompt({
+            sessionId: session?.sessionId || fromUserId,
+            prompt: [{ type: "text", text: prompt }],
+          })
+          .then(() => resolve(), reject)
+          .finally(clearPromptRejector);
+      });
+    } catch (err) {
+      console.error(`[dispatch] Prompt failed: ${(err as Error).message}`);
+      collector.reset();
+      await sendTextReply(fromUserId, `⚠️ Agent 请求失败: ${(err as Error).message}`, contextToken);
+      return;
+    }
+
+    // Send typing indicator (state 2 = "stopped") after the prompt completes
+    try {
+      const client = getWechatClient();
+      const configResp = await client.getConfig(fromUserId, contextToken);
+      if (configResp.typing_ticket) {
+        await client.sendTyping(fromUserId, configResp.typing_ticket, 2);
+      }
+    } catch {}
+
+    // Flush any remaining buffered text from the collector.
+    // Most text was already sent in real-time via onFlush above.
+    const hadOutput = collector.hasOutput() || collector.getText().length > 0;
+    collector.flush();
+
+    // If the agent produced no output at all but media was received,
+    // send a short acknowledgement
+    if (!hadOutput && (!userText || mediaPaths.length > 0)) {
+      await sendTextReply(fromUserId, "✅ 已收到消息", contextToken);
+    }
+
+    // Update the last-active timestamp for idle-timeout tracking
+    touchSession(fromUserId);
+  } finally {
+    promptBusy = false;
   }
-
-  // Update the last-active timestamp for idle-timeout tracking
-  touchSession(fromUserId);
 }

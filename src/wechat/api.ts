@@ -205,7 +205,19 @@ export async function sendMessage(
     },
     base_info: buildBaseInfo(),
   };
-  await apiPost(baseUrl, "ilink/bot/sendmessage", body, token, DEFAULT_API_TIMEOUT_MS);
+  const raw = await apiPost(baseUrl, "ilink/bot/sendmessage", body, token, DEFAULT_API_TIMEOUT_MS);
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed.ret !== undefined && parsed.ret !== 0) {
+      throw new Error(`sendMessage API error: ret=${JSON.stringify(parsed.ret)} errmsg=${JSON.stringify(parsed.errmsg)}`);
+    }
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      // non-JSON response body — assume success if HTTP was 2xx
+    } else {
+      throw err;
+    }
+  }
   return { clientId, runId };
 }
 
