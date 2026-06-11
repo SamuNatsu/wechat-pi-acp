@@ -16,7 +16,9 @@ import {
   getConnection,
   getCurrentCollector,
   isRunning,
+  isSessionFresh,
   killAgent,
+  markSessionUsed,
   resetSessionState,
   setPromptRejector,
 } from "./agent/agent.js";
@@ -189,6 +191,15 @@ async function routeToAgent(
         prompt += `\n  - ${m.filePath} (${m.size} bytes)`;
       }
       prompt += "\n\n如果有需要，请使用 read 工具查看文件内容。";
+    }
+
+    // Inject system prompt before the first message of a fresh session
+    if (isSessionFresh(fromUserId)) {
+      const config = loadConfig();
+      if (config.systemPrompt) {
+        prompt = config.systemPrompt + "\n\n---\n\n" + prompt;
+        markSessionUsed(fromUserId);
+      }
     }
 
     // Send typing indicator (state 1 = "typing") before the prompt

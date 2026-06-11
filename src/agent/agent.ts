@@ -26,6 +26,17 @@ let promptRejector: ((err: Error) => void) | null = null;
 let currentUserId: string | null = null;
 let currentCollector: ReturnType<typeof createTextCollector> | null = null;
 
+/** Users whose ACP session was freshly created (not resumed) — triggers system prompt injection. */
+const freshSessionUsers = new Set<string>();
+
+export function isSessionFresh(userId: string): boolean {
+  return freshSessionUsers.has(userId);
+}
+
+export function markSessionUsed(userId: string): void {
+  freshSessionUsers.delete(userId);
+}
+
 // ---- process API ----
 
 export function getConnection(): ClientSideConnection | null {
@@ -196,6 +207,7 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
   console.log(`[agent] ACP initialized: ${initResp.agentInfo?.name} v${initResp.agentInfo?.version}`);
 
   let sessionId: string;
+  let createdNew = false;
 
   if (session?.sessionId) {
     console.log(`[agent] Resuming session ${session.sessionId}...`);
@@ -209,11 +221,19 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
       const created = await connection.newSession({ cwd, mcpServers: [] });
       sessionId = created.sessionId;
       collector.reset();
+      createdNew = true;
     }
   } else {
     const created = await connection.newSession({ cwd, mcpServers: [] });
     sessionId = created.sessionId;
     collector.reset();
+    createdNew = true;
+  }
+
+  if (createdNew) {
+    freshSessionUsers.add(userId);
+  } else {
+    freshSessionUsers.delete(userId);
   }
 
   setSession(userId, { sessionId });

@@ -16,6 +16,8 @@ export interface AppConfig {
   /** Hard cap on a single file upload/download (bytes). */
   maxFileSize: number;
   botAgent: string;
+  /** System prompt injected at the start of every new ACP session. */
+  systemPrompt: string;
 }
 
 /**

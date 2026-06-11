@@ -21,6 +21,7 @@ const DEFAULTS: AppConfig = {
   mediaTempDir: path.join(os.tmpdir(), "wechat-pi-acp"),
   maxFileSize: 104_857_600,
   botAgent: `WeChat-Pi-ACP/${VERSION}`,
+  systemPrompt: "",
 };
 
 /** Lazily initialized config cache — populated on first loadConfig() or saveConfig(). */
