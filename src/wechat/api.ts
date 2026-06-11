@@ -209,7 +209,9 @@ export async function sendMessage(
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (parsed.ret !== undefined && parsed.ret !== 0) {
-      throw new Error(`sendMessage API error: ret=${JSON.stringify(parsed.ret)} errmsg=${JSON.stringify(parsed.errmsg)}`);
+      throw new Error(
+        `sendMessage API error: ret=${JSON.stringify(parsed.ret)} errmsg=${JSON.stringify(parsed.errmsg)}`,
+      );
     }
   } catch (err) {
     if (err instanceof SyntaxError) {
