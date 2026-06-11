@@ -43,10 +43,6 @@ export function getConnection(): ClientSideConnection | null {
   return conn;
 }
 
-export function getProcess(): ChildProcess | null {
-  return proc;
-}
-
 export function isRunning(): boolean {
   return proc !== null && !proc.killed;
 }
@@ -79,7 +75,7 @@ export function killAgent(): void {
   conn = null;
 }
 
-export function spawnAndConnect(acpCommand: string, cwd: string, handlerFactory: (agent: Agent) => Client): void {
+function spawnAndConnect(acpCommand: string, cwd: string, handlerFactory: (agent: Agent) => Client): void {
   killAgent();
 
   console.log(`[acp] Spawning: ${acpCommand}`);

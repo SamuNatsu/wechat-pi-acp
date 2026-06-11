@@ -39,7 +39,7 @@ pnpm format:check   # prettier --check src/
 
 | Path | Purpose |
 |------|---------|
-| `~/.wechat-pi-acp/config.json` | Auth token, API URLs, agent command, timeouts |
+| `~/.wechat-pi-acp/config.json` | Auth token, API URLs, agent command, timeouts, systemPrompt |
 | `~/.wechat-pi-acp/sessions.json` | Per-user ACP session IDs and last-active timestamps |
 | `~/.wechat-pi-acp/tokens.json` | (referenced in config.ts but not actively used yet) |
 | `/tmp/wechat-pi-acp/` | Temporary media downloads |
@@ -49,8 +49,9 @@ pnpm format:check   # prettier --check src/
 - `config.ts` also exports `loadSessions()` / `saveSessions()` for the sessions.json store.
 - The ACP agent command defaults to `npx pi-acp` and runs in each user's inbox directory (`<mediaTempDir>/inbox/<user_id>/`).
 - `maxFileSize` defaults to 104_857_600 (100 MB) — rejects oversized uploads/downloads.
+- `systemPrompt` (default empty) is injected before the first message of a fresh ACP session (see dispatch.ts `isSessionFresh` / `markSessionUsed`).
 - `idleTimeoutMs` (default 600s) in config is tracked via `lastActiveAt` timestamps but **not yet enforced** — no code kills the agent on idle. `lastActiveAt` is only used by `/status`.
-- `src/state.ts` centralizes module-level mutable state (agent process, sessions, compose/upload mode, QR login). Modules import getters/setters instead of using file-scoped variables.
+- `src/state.ts` centralizes mutable state for compose/upload mode and QR login. Agent process state (proc, conn, collector) lives locally in `agent/agent.ts`, not in `state.ts`.
 
 ## Architecture
 
@@ -65,7 +66,7 @@ src/utils.ts            # shared utilities: humanizeSize, splitText, escape
 src/version.ts          # single source of truth for package version
 src/types.ts            # all TypeScript interfaces (single file)
 
-src/agent/agent.ts      # unified agent lifecycle: process spawn, NDJSON bridge, sessions
+src/agent/agent.ts      # **active** unified agent lifecycle: process spawn, NDJSON bridge, sessions
 src/agent/handler.ts    # ACP handler factory: sessionUpdate, read/writeTextFile, requestPermission
 src/agent/session.ts    # session store backed by sessions.json
 
@@ -84,7 +85,9 @@ src/media/compose.ts    # message compose mode: accumulate text + files in order
 
 ## Message Dispatch Pipeline
 
-Each inbound message flows through `dispatch.ts` in this order (first match wins):
+Each inbound message is dispatched via `void handleMessage(...)` (fire-and-forget) so the long-poll message loop is never blocked — critical for `/cancel` to interrupt long-running prompts.
+
+Each message flows through `dispatch.ts` in this order (first match wins):
 
 1. **Command intercept** — slash commands (`/new`, `/cancel`, etc.) handled locally by `commands.ts`
 2. **Compose-mode bypass** — if user is in `/msg-start` mode, text/files are accumulated, not sent to agent

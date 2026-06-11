@@ -52,8 +52,3 @@ export function touchSession(userId: string): void {
     scheduleSave();
   }
 }
-
-/** Return a shallow copy of all sessions (used for introspection). */
-export function allSessions(): Record<string, Record<string, unknown>> {
-  return { ...SESSION_STORE };
-}

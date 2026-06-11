@@ -137,6 +137,16 @@ export async function handleMessage(message: WechatMessage): Promise<void> {
 /** True when a prompt is in-flight — guards against concurrent conn.prompt() calls. */
 let promptBusy = false;
 
+async function setTyping(fromUserId: string, contextToken: string, status: number): Promise<void> {
+  try {
+    const client = getWechatClient();
+    const configResp = await client.getConfig(fromUserId, contextToken);
+    if (configResp.typing_ticket) {
+      await client.sendTyping(fromUserId, configResp.typing_ticket, status);
+    }
+  } catch {}
+}
+
 async function routeToAgent(
   fromUserId: string,
   userTempDir: string,
@@ -202,14 +212,8 @@ async function routeToAgent(
       }
     }
 
-    // Send typing indicator (state 1 = "typing") before the prompt
-    try {
-      const client = getWechatClient();
-      const configResp = await client.getConfig(fromUserId, contextToken);
-      if (configResp.typing_ticket) {
-        await client.sendTyping(fromUserId, configResp.typing_ticket, 1);
-      }
-    } catch {}
+    // Send typing indicator before the prompt
+    await setTyping(fromUserId, contextToken, 1);
 
     // Send the prompt to the ACP agent — this blocks until the agent
     // finishes processing (the collector accumulates output concurrently)
@@ -232,14 +236,8 @@ async function routeToAgent(
       return;
     }
 
-    // Send typing indicator (state 2 = "stopped") after the prompt completes
-    try {
-      const client = getWechatClient();
-      const configResp = await client.getConfig(fromUserId, contextToken);
-      if (configResp.typing_ticket) {
-        await client.sendTyping(fromUserId, configResp.typing_ticket, 2);
-      }
-    } catch {}
+    // Send typing indicator after the prompt completes
+    await setTyping(fromUserId, contextToken, 2);
 
     // Flush any remaining buffered text from the collector.
     // Most text was already sent in real-time via onFlush above.

@@ -71,7 +71,3 @@ export function getWechatClient(): WechatClient {
   }
   return _client;
 }
-
-export function setWechatClient(client: WechatClient): void {
-  _client = client;
-}

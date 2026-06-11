@@ -27,24 +27,9 @@ const DEFAULTS: AppConfig = {
 /** Lazily initialized config cache — populated on first loadConfig() or saveConfig(). */
 let cachedConfig: AppConfig | null = null;
 
-/** Return the absolute path to config.json. */
-export function resolveConfigPath(): string {
-  return CONFIG_PATH;
-}
-
-/** Return the config directory path. */
-export function resolveConfigDir(): string {
-  return CONFIG_DIR;
-}
-
 /** Return the path to sessions.json (per-user session persistence). */
-export function resolveSessionsPath(): string {
+function resolveSessionsPath(): string {
   return path.join(CONFIG_DIR, "sessions.json");
-}
-
-/** Return the path to tokens.json (reserved for future use). */
-export function resolveTokensPath(): string {
-  return path.join(CONFIG_DIR, "tokens.json");
 }
 
 /**

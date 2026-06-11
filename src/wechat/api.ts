@@ -72,6 +72,22 @@ function buildBaseInfo(): Record<string, string> {
 }
 
 /**
+ * Build a combined AbortSignal that includes an optional timeout.
+ * Returns the cleanup timer handle if a timeout was set — caller
+ * must clearTimeout(t) in a finally block.
+ */
+function withTimeout(
+  timeoutMs?: number,
+  abortSignal?: AbortSignal,
+): { signal: AbortSignal | undefined; timer: ReturnType<typeof setTimeout> | undefined } {
+  if (!timeoutMs) return { signal: abortSignal, timer: undefined };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = abortSignal ? AbortSignal.any([controller.signal, abortSignal]) : controller.signal;
+  return { signal, timer };
+}
+
+/**
  * Generic authenticated POST to the WeChat API.
  * Returns the raw response body string. Throws on non-2xx or when the external signal aborts.
  */
@@ -85,13 +101,7 @@ export async function apiPost(
 ): Promise<string> {
   const url = `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
   const headers = token ? buildAuthHeaders(token) : { ...buildCommonHeaders(), "Content-Type": "application/json" };
-  const timeoutController = timeoutMs ? new AbortController() : undefined;
-  const t = timeoutController && timeoutMs ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
-  const combinedSignal = timeoutController
-    ? abortSignal
-      ? AbortSignal.any([timeoutController.signal, abortSignal])
-      : timeoutController.signal
-    : abortSignal;
+  const { signal: combinedSignal, timer } = withTimeout(timeoutMs, abortSignal);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -103,7 +113,7 @@ export async function apiPost(
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
     return text;
   } finally {
-    if (t) clearTimeout(t);
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -119,13 +129,7 @@ export async function apiGet(
 ): Promise<string> {
   const url = `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
   const headers = buildCommonHeaders();
-  const timeoutController = timeoutMs ? new AbortController() : undefined;
-  const t = timeoutController && timeoutMs ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
-  const combinedSignal = timeoutController
-    ? abortSignal
-      ? AbortSignal.any([timeoutController.signal, abortSignal])
-      : timeoutController.signal
-    : abortSignal;
+  const { signal: combinedSignal, timer } = withTimeout(timeoutMs, abortSignal);
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -136,7 +140,7 @@ export async function apiGet(
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
     return text;
   } finally {
-    if (t) clearTimeout(t);
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -306,5 +310,3 @@ export async function notifyStop(baseUrl: string, token: string): Promise<Notify
 
 export const FIXED_BASE_URL: string = FIXED_LOGIN_BASE;
 export const DEFAULT_BOT_TYPE: string = "3";
-export const LONG_POLL_TIMEOUT: number = DEFAULT_LONG_POLL_TIMEOUT_MS;
-export const API_TIMEOUT: number = DEFAULT_API_TIMEOUT_MS;

@@ -22,7 +22,7 @@ import path from "node:path";
  * Map a file extension to a WeChat media type.
  * 1 = image, 2 = video, 3 = generic file.
  */
-export function getMediaType(filePath: string): number {
+function getMediaType(filePath: string): number {
   const type = mime.getType(filePath) || "application/octet-stream";
   if (type.startsWith("image/")) return 1;
   if (type.startsWith("video/")) return 2;

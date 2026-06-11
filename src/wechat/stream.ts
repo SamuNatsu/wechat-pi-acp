@@ -18,8 +18,6 @@ const RETRY_DELAY_MS = 2_000;
 /** Error code returned by the server when the session has expired. */
 const SESSION_EXPIRED_ERRCODE = -14;
 
-export { SESSION_EXPIRED_ERRCODE };
-
 /**
  * Async generator that yields StreamEvent values as messages arrive.
  * On session expiry (errcode -14) it pauses for 60 minutes, then resumes.
