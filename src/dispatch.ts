@@ -52,12 +52,14 @@ export async function handleMessage(message: WechatMessage): Promise<void> {
 
   const userTempDir = path.join(config.mediaTempDir, "inbox", fromUserId.replace(/[@.]/g, "_"));
 
+  const resolvedToken = () => getSession(fromUserId)?.contextToken || contextToken;
+
   const ctx: CommandContext = {
     fromUserId,
-    contextToken,
+    contextToken: resolvedToken(),
     inboxDir: userTempDir,
-    sendReply: (text) => sendTextReply(fromUserId, text, contextToken),
-    sendMedia: (filePath) => sendMediaReply(fromUserId, filePath, contextToken),
+    sendReply: (text) => sendTextReply(fromUserId, text, resolvedToken()),
+    sendMedia: (filePath) => sendMediaReply(fromUserId, filePath, resolvedToken()),
     getSession: () => getSession(fromUserId),
     deleteSession: () => deleteSession(fromUserId),
     agentConn: () => getConnection() as AgentConnection | null,
@@ -70,7 +72,7 @@ export async function handleMessage(message: WechatMessage): Promise<void> {
     composeStart: () => composeStart(fromUserId),
     composeEnd: () => composeEnd(fromUserId),
     composeCancel: () => composeCancel(fromUserId),
-    sendPrompt: (text: string) => routeToAgent(fromUserId, userTempDir, contextToken, text, []),
+    sendPrompt: (text: string) => routeToAgent(fromUserId, userTempDir, resolvedToken(), text, []),
     getSessionMeta: () => getCurrentCollector()?.getMeta() ?? null,
   };
 

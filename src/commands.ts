@@ -2,6 +2,7 @@ import type { CancelNotification, SetSessionModeRequest } from "@agentclientprot
 import { escape, humanizeSize } from "./utils.js";
 import type { SessionData } from "./types.js";
 import type { SessionMeta } from "./agent/handler.js";
+import { getWechatClient } from "./wechat/client.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -372,5 +373,23 @@ register({
   description: "显示帮助",
   handler: async (ctx) => {
     await ctx.sendReply(commandsHelpText());
+  },
+});
+
+register({
+  name: "//",
+  description: "无操作、仅刷新上下文令牌防止过期",
+  handler: async (ctx) => {
+    const session = ctx.getSession();
+    const token = session?.contextToken;
+    if (!token) {
+      await ctx.sendReply("⚠️ 无上下文令牌");
+      return;
+    }
+    try {
+      await getWechatClient().getConfig(ctx.fromUserId, token);
+    } catch {
+      await ctx.sendReply("⚠️ 上下文令牌刷新失败");
+    }
   },
 });
