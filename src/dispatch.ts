@@ -26,7 +26,8 @@ import { composeCancel, composeEnd, composeStart, handleComposeMode, isComposeMo
 import { deleteSession, getSession, setSession, touchSession } from "./agent/session.js";
 import { downloadMedia, extractMediaItems } from "./media/download.js";
 import { handleUploadMode, isUploadMode, uploadEnd, uploadStart } from "./media/inbox.js";
-import { sendMediaReply, sendTextReply } from "./reply.js";
+import { resetSendCount, sendMediaReply, sendTextReply } from "./reply.js";
+import { SYSTEM_PROMPT } from "./system-prompt.js";
 import { cleanupUserDir } from "./media/cleanup.js";
 import { createLogger } from "./logger.js";
 import { getWechatClient } from "./wechat/client.js";
@@ -42,6 +43,8 @@ export async function handleMessage(message: WechatMessage): Promise<void> {
   const config = loadConfig();
   const fromUserId = message.from_user_id;
   if (!fromUserId) return;
+
+  resetSendCount();
 
   const contextToken = message.context_token || "";
 
@@ -164,9 +167,12 @@ async function routeToAgent(
     }
 
     if (isSessionFresh(fromUserId)) {
+      const parts: string[] = [];
+      if (SYSTEM_PROMPT) parts.push(SYSTEM_PROMPT);
       const config = loadConfig();
-      if (config.systemPrompt) {
-        prompt = config.systemPrompt + "\n\n---\n\n" + prompt;
+      if (config.systemPrompt) parts.push(config.systemPrompt);
+      if (parts.length > 0) {
+        prompt = parts.join("\n\n---\n\n") + "\n\n---\n\n" + prompt;
         markSessionUsed(fromUserId);
       }
     }

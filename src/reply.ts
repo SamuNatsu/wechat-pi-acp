@@ -20,28 +20,74 @@ const MIN_SEND_INTERVAL_MS = 5000;
 const MAX_RETRIES = 5;
 /** Base backoff delay for retries (ms). */
 const RETRY_BASE_DELAY_MS = 2000;
+/** Send-count threshold before rate-limit notice is triggered. */
+const RATE_LIMIT_THRESHOLD = 6;
 
 let sendChain = Promise.resolve();
 let lastSendTime = 0;
+
+/** Messages sent since the last user message. */
+let sendCount = 0;
+/** Whether the rate-limit notice has been sent in this window. */
+let limitNoticeSent = false;
+/** Resolver to awake paused sends when the counter is reset. */
+let resetResolver: (() => void) | null = null;
+
+const RATE_LIMIT_NOTICE: WechatMessageItem = {
+  type: 1,
+  text_item: { text: "⚠️ 已达到发送限制，请发送 `//` 刷新令牌后继续。" },
+};
+
+export function resetSendCount(): void {
+  sendCount = 0;
+  limitNoticeSent = false;
+  if (resetResolver) {
+    resetResolver();
+    resetResolver = null;
+  }
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function sendWithRetry(
-  toUserId: string,
-  items: WechatMessageItem[],
-  contextToken?: string,
-): Promise<SendResult> {
+async function sendWithRetry(toUserId: string, items: WechatMessageItem[], contextToken?: string): Promise<SendResult> {
+  if (sendCount >= RATE_LIMIT_THRESHOLD && limitNoticeSent) {
+    log.debug("Send paused — waiting for rate-limit reset");
+    await new Promise<void>((resolve) => {
+      resetResolver = resolve;
+    });
+    log.debug("Send resumed — rate-limit reset");
+  }
+
   let lastError: Error | undefined;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await getWechatClient().sendMessage(toUserId, items, contextToken);
+      const result = await getWechatClient().sendMessage(toUserId, items, contextToken);
+      sendCount++;
+
+      if (sendCount >= RATE_LIMIT_THRESHOLD && !limitNoticeSent) {
+        try {
+          await getWechatClient().sendMessage(toUserId, [RATE_LIMIT_NOTICE], contextToken);
+          sendCount++;
+          limitNoticeSent = true;
+        } catch {
+          log.warn("Rate-limit notice failed to send");
+        }
+      }
+
+      return result;
     } catch (err) {
       lastError = err as Error;
       if (attempt < MAX_RETRIES) {
         const wait = RETRY_BASE_DELAY_MS * 2 ** attempt;
-        log.warn("Send failed (attempt %d/%d), retrying in %dms: %s", attempt + 1, MAX_RETRIES, wait, lastError.message);
+        log.warn(
+          "Send failed (attempt %d/%d), retrying in %dms: %s",
+          attempt + 1,
+          MAX_RETRIES,
+          wait,
+          lastError.message,
+        );
         await delay(wait);
       }
     }
@@ -73,7 +119,7 @@ export async function sendTextReply(toUserId: string, text: string, contextToken
     const preview = trimPreview.length > 30 ? trimPreview.slice(0, 30) + "…" : trimPreview;
     log.debug("Replied text (%d chars) to %s: %s", text.length, toUserId, preview);
   }).catch((err: unknown) => {
-    log.error("Text reply failed after %d retries: %s", MAX_RETRIES, (err as Error).message);
+    log.warn("Text reply dropped: %s", (err as Error).message);
   });
 }
 
@@ -85,7 +131,7 @@ export async function sendMediaReply(toUserId: string, filePath: string, context
     await enqueue(async () => {
       await sendWithRetry(toUserId, [item], contextToken);
     }).catch((err: unknown) => {
-      log.error("Media reply failed after %d retries: %s", MAX_RETRIES, (err as Error).message);
+      log.warn("Media reply dropped: %s", (err as Error).message);
     });
   }
 }
