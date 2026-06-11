@@ -5,15 +5,17 @@
  * Only one agent process runs at a time. User-switching kills the current process.
  */
 
-import type { Agent, Client } from "@agentclientprotocol/sdk";
+import type { Agent, Client, RequestPermissionResponse } from "@agentclientprotocol/sdk";
 import { type ChildProcess, spawn } from "node:child_process";
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import { createHandlerFactory, createTextCollector } from "./handler.js";
 import { getSession, setSession, touchSession } from "./session.js";
-import type { RequestPermissionResponse } from "@agentclientprotocol/sdk";
 import { VERSION } from "../version.js";
+import { createLogger } from "../logger.js";
 import { loadConfig } from "../config.js";
 import { mkdirSync } from "node:fs";
+
+const log = createLogger("agent");
 
 // ---- process state ----
 
@@ -78,7 +80,7 @@ export function killAgent(): void {
 function spawnAndConnect(acpCommand: string, cwd: string, handlerFactory: (agent: Agent) => Client): void {
   killAgent();
 
-  console.log(`[acp] Spawning: ${acpCommand}`);
+  log.debug("Spawning: %s", acpCommand);
   const parts = acpCommand.split(/\s+/);
   const cmd = parts[0];
   const args = parts.slice(1);
@@ -90,7 +92,7 @@ function spawnAndConnect(acpCommand: string, cwd: string, handlerFactory: (agent
   });
 
   proc.on("exit", (code: number | null) => {
-    console.log(`[acp] Agent process exited with code ${code}`);
+    log.info("Agent process exited with code %d", code ?? -1);
     if (promptRejector) {
       promptRejector(new Error(`Agent process exited with code ${code}`));
       promptRejector = null;
@@ -100,7 +102,7 @@ function spawnAndConnect(acpCommand: string, cwd: string, handlerFactory: (agent
   });
 
   proc.on("error", (err: Error) => {
-    console.error(`[acp] Agent spawn error: ${err.message}`);
+    log.error("Agent spawn error: %s", err.message);
     if (promptRejector) {
       promptRejector(new Error(`Agent process error: ${err.message}`));
       promptRejector = null;
@@ -167,7 +169,7 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
   }
 
   if (currentUserId && currentUserId !== userId && isRunning()) {
-    console.log(`[agent] Closing agent for ${currentUserId}, switching to ${userId}`);
+    log.debug("Closing agent for %s, switching to %s", currentUserId, userId);
     killAgent();
     currentUserId = null;
     currentCollector = null;
@@ -187,7 +189,7 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
 
   mkdirSync(cwd, { recursive: true });
 
-  console.log(`[agent] Connecting ACP agent for user ${userId} (cwd=${cwd})...`);
+  log.info("Connecting ACP agent for user %s (cwd=%s)", userId, cwd);
   spawnAndConnect(config.acpCommand, cwd, handlerFactory);
 
   if (!isRunning()) throw new Error("Agent process failed to start");
@@ -200,20 +202,20 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
     clientCapabilities: {},
     clientInfo: { name: "wechat-pi-acp", title: "WeChat ACP Bridge", version: VERSION },
   });
-  console.log(`[agent] ACP initialized: ${initResp.agentInfo?.name} v${initResp.agentInfo?.version}`);
+  log.info("ACP initialized: %s v%s", initResp.agentInfo?.name, initResp.agentInfo?.version);
 
   let sessionId: string;
   let createdNew = false;
 
   if (session?.sessionId) {
-    console.log(`[agent] Resuming session ${session.sessionId}...`);
+    log.debug("Resuming session %s...", session.sessionId);
     try {
       await connection.loadSession({ sessionId: session.sessionId, cwd, mcpServers: [] });
       sessionId = session.sessionId;
       collector.reset();
-      console.log(`[agent] Session resumed.`);
+      log.info("Session resumed.");
     } catch (err) {
-      console.log(`[agent] loadSession failed: ${(err as Error).message}, creating new session.`);
+      log.warn("loadSession failed: %s, creating new session.", (err as Error).message);
       const created = await connection.newSession({ cwd, mcpServers: [] });
       sessionId = created.sessionId;
       collector.reset();
@@ -234,5 +236,5 @@ export async function ensureAgentRunning(userId: string, cwd: string): Promise<v
 
   setSession(userId, { sessionId });
   touchSession(userId);
-  console.log(`[agent] Agent ready for ${userId}, session=${sessionId}`);
+  log.info("Agent ready for %s, session=%s", userId, sessionId);
 }

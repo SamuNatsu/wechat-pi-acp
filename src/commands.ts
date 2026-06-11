@@ -17,7 +17,7 @@ export interface CommandReplyOps {
   fromUserId: string;
   contextToken: string;
   sendReply: (text: string) => Promise<void>;
-  sendMedia: (filePath: string, caption?: string) => Promise<void>;
+  sendMedia: (filePath: string) => Promise<void>;
 }
 
 export interface CommandSessionOps {
@@ -144,7 +144,7 @@ export function commandsHelpText(): string {
   let text = "**💡 可用命令：**\n\n| 命令 | 说明 | 用法 |\n| --- | --- | --- |\n";
   for (const [name, def] of registry) {
     const desc = name === def.name ? def.description : `同 ${def.name} — ${def.description}`;
-    const usage = def.usage ? `\`${escape(def.usage)}\`` : "";
+    const usage = def.usage ? `\`${def.usage}\`` : "";
     text += `| \`${name}\` | ${escape(desc)} | ${usage} |\n`;
   }
   return text;
@@ -272,10 +272,10 @@ register({
 register({
   name: "/file-send",
   description: "手动发送文件到微信",
-  usage: "/file-send <文件路径> [可选说明]",
+  usage: "/file-send <文件路径>",
   handler: async (ctx, args) => {
     if (args.length === 0) {
-      await ctx.sendReply("ℹ️ 用法: `/file-send <文件路径> [可选说明]`");
+      await ctx.sendReply("ℹ️ 用法: `/file-send <文件路径>`");
       return;
     }
     const rawPath = args[0];
@@ -291,9 +291,8 @@ register({
       await ctx.sendReply(`⚠️ 文件不存在: ${rawPath}`);
       return;
     }
-    const caption = args.slice(1).join(" ") || undefined;
     try {
-      await ctx.sendMedia(resolved, caption);
+      await ctx.sendMedia(resolved);
       await ctx.sendReply("✅ 文件已发送");
     } catch (err) {
       await ctx.sendReply(`⚠️ 发送失败: ${(err as Error).message}`);

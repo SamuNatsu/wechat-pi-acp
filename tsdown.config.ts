@@ -8,7 +8,7 @@ export default defineConfig({
   clean: true,
   dts: false,
   deps: {
-    neverBundle: ["@agentclientprotocol/sdk", "qrcode-terminal"],
+    neverBundle: ["@agentclientprotocol/sdk", "qrcode-terminal", "pino-pretty"],
   },
   outDir: "dist",
 });

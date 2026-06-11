@@ -13,9 +13,10 @@ pnpm format:check   # prettier --check src/
 ```
 
 - `tsdown` is the bundler, **not `tsc`**. The build step is needed before `pnpm start`. Build cleans `dist/` first (`clean: true`).
-- `@agentclientprotocol/sdk` and `qrcode-terminal` are **excluded from the bundle** (`neverBundle` in tsdown config). They must be available at runtime. `qrcode-terminal` is imported dynamically in `wechat/auth.ts`.
+- `@agentclientprotocol/sdk`, `qrcode-terminal`, and `pino-pretty` are **excluded from the bundle** (`neverBundle` in tsdown config). `qrcode-terminal` is imported dynamically in `wechat/auth.ts`. `pino-pretty` is loaded by pino's transport worker.
 - Package manager is **pnpm** (lockfile: `pnpm-lock.yaml`).
 - `cac` is used for CLI argument parsing (not manual `process.argv` parsing).
+- `pino` is the structured logger (`src/logger.ts`). Each module creates a child with `createLogger("name")`. Levels: `debug` (gated by `--verbose`), `info`, `warn`, `error`. Replace `console.log` → `logger.info`, `console.error` → `logger.error`. User-facing Chinese messages stay as `console.log`.
 
 ## Commands & Verification
 
@@ -60,6 +61,7 @@ src/cli.ts              # entry point — cac CLI, main loop, signal handling
 src/config.ts           # config I/O from ~/.wechat-pi-acp/ (+ singleton cache)
 src/dispatch.ts         # message routing pipeline, command dispatch
 src/commands.ts         # slash-command registry, tokenizer, built-in commands
+src/logger.ts           # pino logger factory — createLogger("name"), setVerbose()
 src/reply.ts            # text + media reply helpers (extracted from dispatch)
 src/state.ts            # centralized application state (modules import getters)
 src/utils.ts            # shared utilities: humanizeSize, splitText, escape
@@ -128,6 +130,6 @@ Text replies are **streamed in real-time** via the collector:
 | Flag | Description |
 |------|-------------|
 | `--login` | Force QR re-login (even if saved token exists) |
-| `--verbose` | Enable verbose logging |
+| `--verbose` | Enable verbose logging (debug level) |
 | `-v, --version` | Show version |
 | `-h, --help` | Show help |

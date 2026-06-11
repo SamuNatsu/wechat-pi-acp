@@ -17,7 +17,6 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      "sort-imports": "error",
     },
   },
   eslintConfigPrettier,

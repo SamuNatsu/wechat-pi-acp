@@ -7,21 +7,18 @@
  */
 
 import type { CdnMedia, DownloadResult } from "../types.js";
+import { createLogger } from "../logger.js";
 import crypto from "node:crypto";
 import { decryptAesEcb } from "./crypto.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+const log = createLogger("media");
+
 async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true }).catch(() => {});
 }
 
-/**
- * Parse the AES key from various WeChat formats:
- *   - base64 (with or without padding, 16-byte raw key)
- *   - 32-char hex string
- * Falls back to a 16-byte subarray of the raw buffer.
- */
 function parseAesKey(aesKeyField: string | undefined): Buffer | null {
   if (!aesKeyField) return null;
   try {
@@ -37,16 +34,6 @@ function parseAesKey(aesKeyField: string | undefined): Buffer | null {
   }
 }
 
-/**
- * Download a single media item from CDN, decrypt it, and save to tempDir.
- * Returns the local file path and size, or null on failure.
- *
- * @param cdnBaseUrl  Base CDN URL for constructing download URLs
- * @param media       CDN metadata (aes_key, encrypt_query_param, full_url)
- * @param tempDir     Local directory to save the decrypted file
- * @param prefix      Filename prefix (e.g. "image", "file", "voice", "video")
- * @param maxFileSize Max allowed file size in bytes (files exceeding this are skipped)
- */
 export async function downloadMedia(
   cdnBaseUrl: string,
   media: CdnMedia,
@@ -57,38 +44,36 @@ export async function downloadMedia(
   if (!media) return null;
   await ensureDir(tempDir);
 
-  // Extract the AES key from whichever field the server provided
   let aesKey = parseAesKey(media.aes_key);
   if (!aesKey && media.aeskey) {
     aesKey = Buffer.from(media.aeskey, "hex");
   }
   if (!aesKey) {
-    console.error("[media] No AES key found in CDNMedia");
+    log.error("No AES key found in CDNMedia");
     return null;
   }
 
-  // Build the download URL from metadata
   let downloadUrl: string;
   if (media.full_url) {
     downloadUrl = media.full_url;
   } else if (media.encrypt_query_param) {
     downloadUrl = `${cdnBaseUrl}/download?encrypted_query_param=${encodeURIComponent(media.encrypt_query_param)}`;
   } else {
-    console.error("[media] No download URL in CDNMedia");
+    log.error("No download URL in CDNMedia");
     return null;
   }
 
-  console.log(`[media] Downloading from CDN: ${downloadUrl.slice(0, 80)}...`);
+  log.debug("Downloading from CDN: %s...", downloadUrl.slice(0, 80));
   const res = await fetch(downloadUrl);
   if (!res.ok) {
-    console.error(`[media] CDN download failed: ${res.status}`);
+    log.error("CDN download failed: %d", res.status);
     return null;
   }
 
   const ciphertext = Buffer.from(await res.arrayBuffer());
 
   if (maxFileSize && ciphertext.length > maxFileSize) {
-    console.error(`[media] File exceeds size limit (${ciphertext.length} > ${maxFileSize}), skipping`);
+    log.error("File exceeds size limit (%d > %d), skipping", ciphertext.length, maxFileSize);
     return null;
   }
 
@@ -96,22 +81,17 @@ export async function downloadMedia(
   try {
     plaintext = decryptAesEcb(ciphertext, aesKey);
   } catch (err) {
-    console.error(`[media] AES decrypt failed: ${(err as Error).message}`);
+    log.error("AES decrypt failed: %s", (err as Error).message);
     return null;
   }
 
   const filename = `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
   const filePath = path.join(tempDir, filename);
   await fs.writeFile(filePath, plaintext);
-  console.log(`[media] Downloaded ${plaintext.length} bytes to ${filePath}`);
+  log.info("Downloaded %d bytes to %s", plaintext.length, filePath);
   return { filePath, size: plaintext.length };
 }
 
-/**
- * Walk a WeChat message's item_list and extract all media attachments.
- * Each entry includes the media type, the CDN metadata, and any
- * associated file name or AES key.
- */
 export function extractMediaItems(message: {
   item_list?: {
     type: number;
@@ -138,7 +118,6 @@ export function extractMediaItems(message: {
   }[] = [];
   if (!message.item_list) return items;
   for (const item of message.item_list) {
-    // type 2 = image, 3 = voice, 4 = file, 5 = video
     if (item.type === 2 && item.image_item?.media) {
       items.push({
         type: "image",

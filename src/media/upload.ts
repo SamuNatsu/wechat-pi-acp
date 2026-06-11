@@ -1,27 +1,18 @@
 /**
  * Encrypt + upload files to WeChat CDN.
- *
- * Handles the full upload pipeline:
- *   1. Read the local file
- *   2. Determine media type from extension
- *   3. Request an upload URL from the WeChat API
- *   4. Encrypt the plaintext with AES-128-ECB
- *   5. POST the ciphertext to the CDN
- *   6. Build the WechatMessageItem for the outbound message
  */
 
 import type { UploadResult, WechatMessageItem } from "../types.js";
 import { aesEcbPaddedSize, encryptAesEcb, randHex } from "./crypto.js";
+import { createLogger } from "../logger.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { getWechatClient } from "../wechat/client.js";
 import mime from "mime/lite";
 import path from "node:path";
 
-/**
- * Map a file extension to a WeChat media type.
- * 1 = image, 2 = video, 3 = generic file.
- */
+const log = createLogger("upload");
+
 function getMediaType(filePath: string): number {
   const type = mime.getType(filePath) || "application/octet-stream";
   if (type.startsWith("image/")) return 1;
@@ -29,11 +20,6 @@ function getMediaType(filePath: string): number {
   return 3;
 }
 
-/**
- * Encrypt the plaintext and upload it to the CDN.
- * Retries up to 3 times on transient server errors.
- * Returns the download_param (encrypted_query_param) from the x-encrypted-param header.
- */
 async function uploadBufferToCdn(
   plaintext: Buffer,
   aeskey: Buffer,
@@ -61,7 +47,7 @@ async function uploadBufferToCdn(
     }
     if (res.status !== 200) {
       if (attempt < 3) {
-        console.log(`[upload] CDN attempt ${attempt} failed, retrying...`);
+        log.warn("CDN upload attempt %d failed, retrying...", attempt);
         continue;
       }
       throw new Error(`CDN upload failed after ${attempt} attempts`);
@@ -75,10 +61,6 @@ async function uploadBufferToCdn(
   throw new Error("unreachable");
 }
 
-/**
- * Upload a local file to the WeChat CDN and build the message items
- * needed to embed it in an outbound sendMessage call.
- */
 export async function uploadAndBuildMediaItems(
   filePath: string,
   toUserId: string,
@@ -93,7 +75,7 @@ export async function uploadAndBuildMediaItems(
   const aeskey = crypto.randomBytes(16);
   const mediaType = getMediaType(filePath);
 
-  console.log(`[upload] ${filePath}: rawsize=${rawsize}, padded=${filesize}, mediaType=${mediaType}`);
+  log.debug("%s: rawsize=%d, padded=%d, mediaType=%d", filePath, rawsize, filesize, mediaType);
 
   const uploadResp = await client.getUploadUrl({
     filekey,
@@ -112,7 +94,6 @@ export async function uploadAndBuildMediaItems(
     throw new Error("CDN upload URL response missing both upload_full_url and upload_param");
   }
 
-  // Encrypt and upload the file data
   const downloadParam = await uploadBufferToCdn(
     plaintext,
     aeskey,
@@ -123,9 +104,8 @@ export async function uploadAndBuildMediaItems(
   );
   const aesKeyB64 = Buffer.from(aeskey.toString("hex")).toString("base64");
 
-  console.log(`[upload] Success: downloadParam=${downloadParam}...`);
+  log.info("Upload success: %s", downloadParam.slice(0, 40));
 
-  // Build the message item based on media type
   const items: WechatMessageItem[] = [];
 
   if (mediaType === 1) {

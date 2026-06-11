@@ -6,6 +6,7 @@
  * Connects WeChat to Pi ACP agent via QR login.
  */
 
+import { createLogger, setVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 import type { WechatMessageItem } from "./types.js";
 import { cac } from "cac";
@@ -32,10 +33,14 @@ interface CliOptions {
   version: boolean;
 }
 
+// ---- loggers ----
+
+const wechatLog = createLogger("wechat");
+const msgLog = createLogger("msg");
+
 // ---- main ----
 
 async function main(): Promise<void> {
-  // Parse CLI args
   const parsed = cli.parse();
   const opts = parsed.options as CliOptions;
 
@@ -43,17 +48,16 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Guard: require Node.js 22+
+  setVerbose(opts.verbose);
+
   const [major] = process.versions.node.split(".").map(Number);
   if (major < 22) {
     console.error("ERROR: Node.js 22+ required.");
     process.exit(1);
   }
 
-  // Load saved config from ~/.wechat-pi-acp/config.json
   let config = loadConfig();
 
-  // QR login (first run or --login flag)
   if (opts.login || !config.token) {
     console.log("wechat-pi-acp: 需要登录微信\n");
     try {
@@ -66,19 +70,15 @@ async function main(): Promise<void> {
     }
   }
 
-  // Guard: token must exist after login
   if (!config.token) {
     console.error("未配置 token，请先运行 wechat-pi-acp --login");
     process.exit(1);
   }
 
-  // Print startup info
   console.log(`wechat-pi-acp v${VERSION} — 正在启动...`);
   console.log(`  目标 Agent: ${config.acpCommand}`);
   console.log(`  用户 ID: ${config.ilinkUserId}`);
   console.log(`  空闲超时: ${config.idleTimeoutMs / 1000}s\n`);
-
-  // ---- graceful shutdown ----
 
   const abortController = new AbortController();
 
@@ -87,8 +87,8 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log("\n正在关闭...");
-    abortController.abort(); // break the long-poll loop
-    killAgent(); // SIGTERM the ACP agent child process
+    abortController.abort();
+    killAgent();
     try {
       await getWechatClient().notifyStop();
     } catch {}
@@ -104,28 +104,22 @@ async function main(): Promise<void> {
     void shutdown();
   });
 
-  // ---- startup handshake ----
-
   try {
     await getWechatClient().notifyStart();
-    console.log("[wechat] notifyStart 成功");
+    wechatLog.info("notifyStart 成功");
   } catch (err) {
-    console.error(`[wechat] notifyStart 失败: ${(err as Error).message}`);
+    wechatLog.error("notifyStart 失败: %s", (err as Error).message);
   }
 
-  // ---- message loop ----
-
-  console.log("[wechat] 开始长轮询...\n");
+  wechatLog.info("开始长轮询...");
 
   let messageCount = 0;
 
-  // Long-poll WeChat for inbound messages; yields StreamEvent{type, msg}
   for await (const event of streamMessages(abortController.signal, () => {})) {
     if (shuttingDown) break;
 
-    // Server-side session expired — streamSession internally pauses 60 min
     if (event.type === "session-expired") {
-      console.log("[wechat] 会话过期 (errcode -14)，暂停 60 分钟...");
+      wechatLog.warn("会话过期 (errcode -14)，暂停 60 分钟...");
       continue;
     }
 
@@ -134,13 +128,10 @@ async function main(): Promise<void> {
       const from = event.msg.from_user_id || "未知";
       const texts = (event.msg.item_list || []).filter((i: WechatMessageItem) => i.type === 1 && i.text_item?.text);
       const preview = texts.map((i: WechatMessageItem) => i.text_item!.text.slice(0, 40)).join(" | ") || "[非文本消息]";
-      console.log(`[msg #${messageCount}] ${from}: ${preview}`);
+      msgLog.info("#%d %s: %s", messageCount, from, preview);
 
-      // Route to dispatch: slash commands intercept, else agent prompt.
-      // Fire-and-forget so long-running agent prompts don't block the
-      // message loop — commands like /cancel can interrupt immediately.
       void handleMessage(event.msg).catch((err) => {
-        console.error(`[msg] 处理失败: ${(err as Error).message}`);
+        msgLog.error("处理失败: %s", (err as Error).message);
       });
     }
   }

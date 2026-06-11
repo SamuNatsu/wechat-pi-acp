@@ -6,21 +6,22 @@
  *   2. Full cleanup (fullCleanup) — called on graceful shutdown
  */
 
+import { createLogger } from "../logger.js";
 import fs from "node:fs/promises";
 
-/** Recursively delete a user's temp inbox directory. */
+const log = createLogger("cleanup");
+
 export async function cleanupUserDir(userDir: string): Promise<void> {
   try {
     await fs.rm(userDir, { recursive: true, force: true });
-    console.log(`[cleanup] Cleared user dir: ${userDir}`);
+    log.info("Cleared user dir: %s", userDir);
   } catch {}
 }
 
-/** Recursively delete the entire temp directory — called on graceful shutdown. */
 export async function fullCleanup(tempDir: string): Promise<void> {
-  console.log("[cleanup] Full cleanup of temp directory...");
+  log.info("Full cleanup of temp directory...");
   try {
     await fs.rm(tempDir, { recursive: true, force: true });
   } catch {}
-  console.log("[cleanup] Done.");
+  log.info("Cleanup done.");
 }
