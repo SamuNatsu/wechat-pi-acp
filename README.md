@@ -2,6 +2,9 @@
 
 WeChat-to-Pi ACP bridge — connects WeChat to [Pi](https://github.com/svkozak/pi-acp) via QR code login.
 
+> [!CAUTION]
+> Most of the codes are AI generated, use at your own risks
+
 ## Architecture
 
 ```
